@@ -1,0 +1,1 @@
+node_modules/ echo .vscode/ echo .DS_Store echo frontend/.env* echo backend/.env* echo backend/.venv/ echo __pycache__/ 
