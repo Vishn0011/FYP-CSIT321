@@ -1,1 +1,20 @@
-node_modules/ echo .vscode/ echo .DS_Store echo frontend/.env* echo backend/.env* echo backend/.venv/ echo __pycache__/ 
+# Node.js
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+backend/.venv/
+
+# Env files (secrets)
+frontend/.env
+frontend/.env.local
+frontend/.env.*
+backend/.env
+backend/.env.*
+!.env.example
+!.env.local.example
+
+# Editor / OS
+.vscode/
+.DS_Store
