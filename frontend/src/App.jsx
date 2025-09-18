@@ -35,25 +35,46 @@ function App() {
 export default App*/
 
 import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import LoginPage from "./pages/LoginPage";
+import RequireAuth from "./components/RequireAuth";
 
-function App() {
-  const [status, setStatus] = useState("loading...");
-
-  useEffect(() => {
-    const api = import.meta.env.VITE_API_URL || "http://localhost:8000";
-    fetch(`${api}/health`)
-      .then((r) => r.json())
-      .then((data) => setStatus(data.status || "unknown"))
-      .catch(() => setStatus("error"));
-  }, []);
-
+function Dashboard() {
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
   return (
-    <main style={{ fontFamily: "sans-serif", padding: 24 }}>
-      <h1>FYP Frontend</h1>
-      <p>Backend health: <strong>{status}</strong></p>
-    </main>
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold">Dashboard</h1>
+      <p className="mt-2">Welcome, {user?.name || user?.email || "user"}.</p>
+    </div>
   );
 }
 
-export default App;
+// function App() {
+//   const [status, setStatus] = useState("loading...");
 
+//   useEffect(() => {
+//     const api = import.meta.env.VITE_API_URL || "http://localhost:8000";
+//     fetch(`${api}/health`)
+//       .then((r) => r.json())
+//       .then((data) => setStatus(data.status || "unknown"))
+//       .catch(() => setStatus("error"));
+//   }, []);
+
+//   return (
+//     <main style={{ fontFamily: "sans-serif", padding: 24 }}>
+//       <h1>FYP Frontend</h1>
+//       <p>Backend health: <strong>{status}</strong></p>
+//     </main>
+//   );
+// }
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}

@@ -1,4 +1,4 @@
-:root {
+/* :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -11,6 +11,7 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --font-sans: "Work Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
 a {
@@ -28,6 +29,7 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  font-family: var(--font-sans);
 }
 
 h1 {
@@ -65,4 +67,12 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
-}
+} */
+
+
+@import "tailwindcss";
+
+/* Global font + layout */
+:root { --font-sans: "Work Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+html, body, #root { height: 100%; }
+body { margin: 0; font-family: var(--font-sans); background: #f9fafb; color: #111827; }

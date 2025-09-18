@@ -10,8 +10,8 @@ load_dotenv()
 app = Flask(__name__)
 
 # Allow frontend (Vite dev server) to call this API in dev
-###CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
-CORS(app, supports_credentials=True, origins=[ALLOW_ORIGIN])
+CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
+# CORS(app, supports_credentials=True, origins=[ALLOW_ORIGIN], methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "Authorization"], )
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
