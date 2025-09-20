@@ -2,6 +2,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import request, jsonify
+from config import SESSION_TTL_MIN
 from db import get_cursor  # we'll add this helper in db.py
 
 def make_token() -> str:
@@ -37,3 +38,15 @@ def auth_required(fn):
         request.token = token
         return fn(*args, **kwargs)
     return wrapper
+
+def create_session(user_id: int, minutes: int | None = None):
+    """Create a session row and return (token, expires_at)."""
+    ttl = minutes if minutes is not None else SESSION_TTL_MIN
+    token = make_token()
+    exp = expires_at(ttl)
+    with get_cursor() as cur:
+        cur.execute(
+            "INSERT INTO sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+            [user_id, token, exp],
+        )
+    return token, exp

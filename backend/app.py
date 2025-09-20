@@ -3,7 +3,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 from db import query_all, execute, get_cursor
-from auth import make_token, expires_at, auth_required
+from auth import make_token, expires_at, auth_required, create_session
 from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
 
 load_dotenv()
@@ -57,6 +57,38 @@ def login():
         "expires_at": exp.isoformat(),
         "user": {"id": user["id"], "email": user["email"], "name": user.get("name"), "role": user.get("role")}
     })
+
+@app.post("/auth/admin/login")
+def admin_login():
+    body = request.get_json(force=True, silent=True) or {}
+    email = (body.get("email") or "").strip()
+    password = (body.get("password") or "").strip()
+
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT id, email, name, role
+            FROM users
+            WHERE email = %s
+              AND crypt(%s, password_hash) = password_hash
+              AND COALESCE(is_active, TRUE)
+              AND role = 'admin'
+        """, [email, password])
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "invalid admin credentials"}), 401
+
+    user = dict(row)
+    token, exp = create_session(user["id"])
+
+    return jsonify({
+        "token": token,
+        "expires_at": exp.isoformat(),
+        "user": user
+    })
+
 
 # --- Who am I (protected) ---
 @app.get("/me")
