@@ -1,16 +1,12 @@
 # Node.js
 node_modules/
-frontend/dist/
 
 # Python
 __pycache__/
 *.pyc
 backend/.venv/
-backend/__pycache__/
 
 # Env files (secrets)
-.env
-.env.*
 frontend/.env
 frontend/.env.local
 frontend/.env.*
@@ -22,6 +18,3 @@ backend/.env.*
 # Editor / OS
 .vscode/
 .DS_Store
-
-#Logs
-*.log
