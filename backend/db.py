@@ -4,7 +4,6 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from contextlib import contextmanager
 
-
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -18,14 +17,11 @@ def get_cursor():
         conn.commit()
 
 def query_all(sql, params=None):
-    with get_cursor() as cur:
-def query_all(sql, params=None):
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, params or [])
         return cur.fetchall()
 
 def execute(sql, params=None, return_row=False):
-    with get_cursor() as cur:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, params or [])
         if return_row:
@@ -33,6 +29,9 @@ def execute(sql, params=None, return_row=False):
                 return cur.fetchone()
             except Exception:
                 return None
+        conn.commit()
+
+
 # def query_all(sql, params=None):
 #     with get_conn() as conn, conn.cursor() as cur:
 #         cur.execute(sql, params or [])

@@ -27,7 +27,7 @@ export default function AddProperties() {
         try {
             const payload = {
                 ...form,
-                agent_id: 2, // hardcode agent_id for now
+                agent_id: 44, // hardcode agent_id for now
                 photos: JSON.stringify(form.photos),
             };
 

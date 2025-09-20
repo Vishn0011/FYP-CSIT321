@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from db import query_all, execute, get_cursor
 from auth import make_token, expires_at, auth_required, create_session
 from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
+import json
 
 load_dotenv()
 app = Flask(__name__)
@@ -17,7 +18,7 @@ CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://l
 def health():
     return jsonify({"status": "ok"})
 
-# --- Auth: Login -> Session token ---
+# Auth: Login, Session token
 @app.post("/auth/login")
 def login():
     body = request.get_json(force=True) or {}
@@ -110,10 +111,6 @@ def list_users():
     rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
     return jsonify(rows)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT, debug=DEBUG)
-
-
 # @app.get("/api/users")
 # def list_users():
 #     rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
@@ -137,49 +134,6 @@ if __name__ == "__main__":
 # if __name__ == "__main__":
 #     port = int(os.getenv("PORT", "8000"))
 #     app.run(host="0.0.0.0", port=port, debug=True)
-    
-=======
-from db import query_all, execute
-import json
-
-
-load_dotenv()
-app = Flask(__name__)
-
-# Allow frontend dev servers to call backend
-CORS(app, supports_credentials=True, origins=[
-    "http://localhost:5173", "http://localhost:3000"
-])
-
-@app.get("/health")
-def health():
-    try:
-        x = query_all("SELECT current_database() AS db, current_user AS user, inet_server_addr() AS host;")
-        return jsonify({"status": "ok", "db_info": x[0]})
-    except Exception as e:
-        return jsonify({"status": "down", "error": str(e)}), 500
-
-
-# --- USERS (for login, simple demo) ---
-@app.get("/api/users")
-def list_users():
-    rows = query_all("SELECT id, email, created_at FROM users ORDER BY created_at DESC;")
-    return jsonify(rows)
-
-@app.post("/api/users")
-def add_user():
-    data = request.get_json(force=True)
-    email = data.get("email")
-    password_hash = data.get("password_hash")
-    if not email or not password_hash:
-        return jsonify({"error": "email and password_hash required"}), 400
-
-    row = execute(
-        "INSERT INTO users(email, password_hash) VALUES(%s, %s) RETURNING id, email, created_at;",
-        [email, password_hash],
-        return_row=True
-    )
-    return jsonify(row), 201
 
 
 # --- PROPERTIES (CRUD for agent properties) ---
@@ -223,7 +177,7 @@ def get_property(prop_id):
 def add_property():
     data = request.get_json(force=True)
     
-    agent_id = 2   # hardcoded to agent@example.com (id = 2 in your users table)
+    agent_id = 44   # hardcoded to agent@example.com (id = 2 in your users table)
 
     title = data.get("title")
     ptype = data.get("property_type")

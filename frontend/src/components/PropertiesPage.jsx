@@ -12,7 +12,7 @@ const api = axios.create({
 
 export default function PropertiesPage() {
     const navigate = useNavigate();
-    const agentId = 2;
+    const agentId = 44;
     const [properties, setProperties] = useState([]);
     const [stats, setStats] = useState({ total: 0, active: 0, pending: 0 });
 
