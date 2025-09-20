@@ -12,6 +12,7 @@ app = Flask(__name__)
 # Allow frontend (Vite dev server) to call this API in dev
 CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
 # CORS(app, supports_credentials=True, origins=[ALLOW_ORIGIN], methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "Authorization"], )
+
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
@@ -22,8 +23,12 @@ def login():
     body = request.get_json(force=True) or {}
     email = (body.get("email") or "").strip()
     password = (body.get("password") or "").strip()
+    role = (body.get("role") or "").strip().lower()
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
+    
+    if role not in ("agent", "homeowner"):  # add other roles if you use them
+        return jsonify({"error": "invalid role"}), 400
 
     with get_cursor() as cur:
         cur.execute("""
@@ -32,12 +37,12 @@ def login():
             WHERE email = %s
               AND crypt(%s, password_hash) = password_hash
               AND COALESCE(is_active, TRUE)
-            LIMIT 1
-        """, [email, password])
+              AND role = %s
+            """, [email, password, role])
         user = cur.fetchone()
 
     if not user:
-        return jsonify({"error": "invalid credentials"}), 401
+        return jsonify({"error": "invalid credentials or role"}), 401
 
     token = make_token()
     exp = expires_at(SESSION_TTL_MIN)
