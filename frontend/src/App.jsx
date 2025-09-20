@@ -54,3 +54,46 @@ export default function App() {
     </BrowserRouter>
   );
 }
+import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
+import "./index.css";
+import PropertiesPage from "./components/PropertiesPage";
+import AddPropertiesPage from "./components/AddProperties";
+import ViewIndividualPropertiesPage from "./components/ViewIndividualProperties";
+import EditIndividualPropertiesPage from "./components/UpdateProperties";
+
+function Nav() {
+    return (
+        <nav className="nav">
+            <div className="nav-brand">Aspect Real Estate</div>
+            <div className="nav-links">
+                <Link to="/agents">Agents</Link>
+                <Link to="/predict">Predict</Link>
+                <Link to="/dashboard">Dashboard</Link>
+                <Link to="/compare">Compare</Link>
+                <Link to="/reports">Reports</Link>
+                <Link to ="/properties">Properties</Link>
+            </div>
+        </nav>
+    );
+}
+
+export default function App() {
+    return (
+        <BrowserRouter>
+            <Nav />
+            <Routes>
+                <Route path="/" element={<Navigate to="/properties" replace />} />
+                <Route path="/properties" element={<PropertiesPage />} />
+                <Route path="/addproperties" element={<AddPropertiesPage />} />
+                <Route path="/properties/:id" element={<ViewIndividualPropertiesPage />} />
+                <Route path="/properties/edit/:id" element={<EditIndividualPropertiesPage />} />
+                <Route path="/predict" element={<div className="page">Prediction form (AI)</div>} />
+                <Route path="/dashboard" element={<div className="page">Dashboard (trends, yields, heatmaps)</div>} />
+                <Route path="/compare" element={<div className="page">Compare saved predictions</div>} />
+                <Route path="/reports" element={<div className="page">Reports / PDF generator</div>} />
+                {/* 404 */}
+                <Route path="*" element={<div className="page">Not found</div>} />
+            </Routes>
+        </BrowserRouter>
+    );
+}

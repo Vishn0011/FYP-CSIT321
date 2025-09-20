@@ -1,0 +1,59 @@
+/* ---------- Theme ---------- */
+:root {
+    --primary: #00674f; /* emerald */
+    --primary-600: #27ae60; /* darker emerald */
+    --primary-100: #e8f8ef;
+    --bg: #f7f9f8;
+    --surface: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --danger: #ef4444;
+    --danger-600: #dc2626;
+}
+/* ---------- Page shell ---------- */
+.properties-page {
+    max-width: 1100px;
+    margin: 24px auto;
+    padding: 0 16px 40px;
+    color: var(--text);
+}
+
+.page-title {
+    margin: 0 0 16px;
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--primary-600);
+}
+
+.upload-box {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+    .upload-box input[type="file"] {
+        display: none;
+    }
+
+.upload-text {
+    color: var(--primary-600);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.input, .select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px; /* match smaller than card */
+    background: #fff;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+    box-sizing: border-box; /*ensures no overflow */
+}

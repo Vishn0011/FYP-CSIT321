@@ -1,3 +1,4 @@
+
 -- CREATE TABLE IF NOT EXISTS users (
 --   id SERIAL PRIMARY KEY,
 --   email TEXT UNIQUE NOT NULL,
@@ -51,3 +52,27 @@ CREATE TABLE IF NOT EXISTS sessions (
 INSERT INTO users (name, email, role, password_hash)
 VALUES ('Demo', 'demo@example.com', 'homeowner', crypt('Abc123!', gen_salt('bf')))
 ON CONFLICT (email) DO NOTHING;
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO users (email, password_hash)
+VALUES ('demo@example.com', 'hashed_demo_pw')
+ON CONFLICT (email) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS properties (
+  id SERIAL PRIMARY KEY,
+  agent_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  size INT NOT NULL,              
+  location TEXT NOT NULL,         
+  floor INT,                      
+  age INT,                        
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO properties (agent_id, size, location, floor, age)
+VALUES (1, 1200, 'Orchard Road, District 9', 10, 5)
+ON CONFLICT DO NOTHING;

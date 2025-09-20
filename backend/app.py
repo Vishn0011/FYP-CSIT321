@@ -138,3 +138,175 @@ if __name__ == "__main__":
 #     port = int(os.getenv("PORT", "8000"))
 #     app.run(host="0.0.0.0", port=port, debug=True)
     
+=======
+from db import query_all, execute
+import json
+
+
+load_dotenv()
+app = Flask(__name__)
+
+# Allow frontend dev servers to call backend
+CORS(app, supports_credentials=True, origins=[
+    "http://localhost:5173", "http://localhost:3000"
+])
+
+@app.get("/health")
+def health():
+    try:
+        x = query_all("SELECT current_database() AS db, current_user AS user, inet_server_addr() AS host;")
+        return jsonify({"status": "ok", "db_info": x[0]})
+    except Exception as e:
+        return jsonify({"status": "down", "error": str(e)}), 500
+
+
+# --- USERS (for login, simple demo) ---
+@app.get("/api/users")
+def list_users():
+    rows = query_all("SELECT id, email, created_at FROM users ORDER BY created_at DESC;")
+    return jsonify(rows)
+
+@app.post("/api/users")
+def add_user():
+    data = request.get_json(force=True)
+    email = data.get("email")
+    password_hash = data.get("password_hash")
+    if not email or not password_hash:
+        return jsonify({"error": "email and password_hash required"}), 400
+
+    row = execute(
+        "INSERT INTO users(email, password_hash) VALUES(%s, %s) RETURNING id, email, created_at;",
+        [email, password_hash],
+        return_row=True
+    )
+    return jsonify(row), 201
+
+
+# --- PROPERTIES (CRUD for agent properties) ---
+@app.get("/api/properties")
+def list_properties():
+    # read ?agent_id=2 from query string
+    agent_id = request.args.get("agent_id", type=int)
+
+    if not agent_id:
+        return jsonify({"error": "agent_id required"}), 400
+
+    rows = query_all(
+        """
+        SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
+               size, location, photos, status, created_at, updated_at
+        FROM properties
+        WHERE agent_id = %s
+        ORDER BY created_at DESC;
+        """,
+        [agent_id]
+    )
+    return jsonify(rows)
+
+#get individual property by id
+@app.get("/api/properties/<int:prop_id>")
+def get_property(prop_id):
+    row = query_all(
+        """
+        SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
+               size, location, photos, status, created_at, updated_at
+        FROM properties
+        WHERE id = %s
+        """,
+        [prop_id]
+    )
+    if not row:
+        return jsonify({"error": "Property not found"}), 404
+    return jsonify(row[0])
+
+@app.post("/api/properties")
+def add_property():
+    data = request.get_json(force=True)
+    
+    agent_id = 2   # hardcoded to agent@example.com (id = 2 in your users table)
+
+    title = data.get("title")
+    ptype = data.get("property_type")
+    price = data.get("price")
+    size = data.get("size")
+    location = data.get("location")
+
+    if not title or not ptype or not price or not size or not location:
+        return jsonify({"error": "Missing required fields"}), 400
+
+    description = data.get("description")
+    bedrooms = data.get("bedrooms", 0)
+    bathrooms = data.get("bathrooms", 0)
+    photos = data.get("photos")
+    status = data.get("status", "Active")
+
+    row = execute(
+        """
+        INSERT INTO properties
+        (agent_id, title, property_type, description, price, bedrooms, bathrooms,
+         size, location, photos, status)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING id, agent_id, title, property_type, description, price,
+                  bedrooms, bathrooms, size, location, photos, status, created_at;
+        """,
+        [agent_id, title, ptype, description, price, bedrooms, bathrooms,
+         size, location, photos, status],
+        return_row=True
+    )
+    return jsonify(row), 201
+
+
+
+@app.patch("/api/properties/edit/<int:prop_id>")
+def update_property(prop_id):
+    data = request.get_json(force=True)
+    fields, values = [], []
+
+    for key in ["title", "property_type", "description", "price", 
+                "bedrooms", "bathrooms", "size", "location", "photos", "status"]:
+        if key in data:
+            if key == "photos" and isinstance(data[key], list):
+                fields.append(f"{key} = %s")
+                values.append(json.dumps(data[key]))
+            else:
+                fields.append(f"{key} = %s")
+                values.append(data[key])
+
+    if not fields:
+        return jsonify({"error": "No fields to update"}), 400
+
+    values.append(prop_id)
+
+    sql = f"""
+        UPDATE properties
+        SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        RETURNING id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
+                  size, location, photos, status, created_at, updated_at
+    """
+
+    print("DEBUG SQL:", sql)
+    print("DEBUG Values:", values)
+
+    row = execute(sql, values, return_row=True)
+    if not row:
+        return jsonify({"error": "Property not found or not updated"}), 404
+    return jsonify(row)
+
+
+@app.delete("/api/properties/<int:prop_id>")
+def delete_property(prop_id):
+    row = execute(
+        "DELETE FROM properties WHERE id = %s RETURNING id;",
+        [prop_id],
+        return_row=True
+    )
+    if not row:
+        return jsonify({"error": "Property not found"}), 404
+    return jsonify({"deleted": row["id"]})
+
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port, debug=True)
