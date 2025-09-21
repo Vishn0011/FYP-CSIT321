@@ -142,7 +142,7 @@ def delete_homeowner_property(prop_id):
         return jsonify({"success": False, "error": "not found"}), 404
     return jsonify({"success": True, "message": f"Property {prop_id} deleted"})
 
-# <-- keep this at the very bottom -->
+# < keep this at the very bottom >
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     app.run(host="0.0.0.0", port=port, debug=True)
