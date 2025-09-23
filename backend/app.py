@@ -162,7 +162,7 @@ def hb_remove_favorite(property_id):
 def hb_ping():
     return jsonify({"ok": True})
 
-# run app last
+# put in last
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     app.run(host="0.0.0.0", port=port, debug=True)
