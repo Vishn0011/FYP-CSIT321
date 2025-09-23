@@ -6,6 +6,7 @@ from db import query_all, execute, get_cursor
 from auth import make_token, expires_at, auth_required, create_session
 from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
 import json
+from routes.users import users_bp
 
 load_dotenv()
 app = Flask(__name__)
@@ -105,11 +106,11 @@ def logout():
         cur.execute("DELETE FROM sessions WHERE token = %s", [request.token])
     return jsonify({"ok": True})
 
-# (Optional) keep your existing simple user list if you still want it:
-@app.get("/api/users")
-def list_users():
-    rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
-    return jsonify(rows)
+# # (Optional) keep your existing simple user list if you still want it:
+# @app.get("/api/users")
+# def list_users():
+#     rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
+#     return jsonify(rows)
 
 # @app.get("/api/users")
 # def list_users():
@@ -259,7 +260,7 @@ def delete_property(prop_id):
         return jsonify({"error": "Property not found"}), 404
     return jsonify({"deleted": row["id"]})
 
-
+app.register_blueprint(users_bp)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
