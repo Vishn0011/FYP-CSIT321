@@ -18,7 +18,7 @@ export default function AdminUsers() {
 
   // Controls visible in the UI (search/filters exist visually; server wiring will come in Step 2)
   const [query, setQuery] = useState("");
-  const [role, setRole] = useState("all"); // admin|agent|client|all
+  const [role, setRole] = useState("all"); // admin|agent|homeowner|all
   const [status, setStatus] = useState("all"); // active|inactive|all
 
   // ---------- Data ----------
@@ -137,7 +137,7 @@ export default function AdminUsers() {
             <option value="all">All roles</option>
             <option value="admin">Admin</option>
             <option value="agent">Agent</option>
-            <option value="client">Client</option>
+            <option value="homeowner">homeowner</option>
           </select>
           <select className="h-10 rounded-xl border border-gray-200 px-3" value={status} onChange={e=>setStatus(e.target.value)}>
             <option value="all">All status</option>

@@ -7,6 +7,7 @@ import PropertiesPage from "./components/PropertiesPage";
 import AddPropertiesPage from "./components/AddProperties";
 import ViewIndividualPropertiesPage from "./components/ViewIndividualProperties";
 import EditIndividualPropertiesPage from "./components/UpdateProperties";
+import AdminUsers from "./pages/AdminUsers";
 import "./index.css";
 
 // ==========================
@@ -105,6 +106,16 @@ export default function App() {
                     element={
                         <RequireAdmin>
                             <AdminDashboard />
+                        </RequireAdmin>
+                    }
+                />
+
+                {/* Admin → Manage Users */}
+                <Route
+                    path="/admin/users"
+                    element={
+                        <RequireAdmin>
+                            <AdminUsers />
                         </RequireAdmin>
                     }
                 />
