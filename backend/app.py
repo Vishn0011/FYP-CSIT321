@@ -1,11 +1,12 @@
-import os
+import os, re
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
-from db import query_all, execute, get_cursor
+from db import query_all, execute, get_cursor, get_conn
 from auth import make_token, expires_at, auth_required, create_session
 from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
 import json
+from werkzeug.security import generate_password_hash
 
 load_dotenv()
 app = Flask(__name__)
@@ -259,7 +260,71 @@ def delete_property(prop_id):
         return jsonify({"error": "Property not found"}), 404
     return jsonify({"deleted": row["id"]})
 
+#---Guest APIs---
+#---Get featured properties for HomePage---
+@app.get("/api/get_featured_properties")
+def get_featured_properties():
+    sql = """
+        SELECT id, location, price, bedrooms, bathrooms, size
+        FROM properties
+        ORDER BY RANDOM()
+        LIMIT 3;
+    """
+    try:
+        rows = query_all(sql)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
+    def norm(r):
+        return {
+            "id": r.get("id"),
+            "location": r.get("location"),
+            "price": float(r["price"]) if r.get("price") is not None else None,
+            "bedrooms": int(r["bedrooms"]) if r.get("bedrooms") is not None else None,
+            "bathrooms": int(r["bathrooms"]) if r.get("bathrooms") is not None else None,
+            "size": int(r["size"]) if r.get("size") is not None else None,
+        }
+
+    return jsonify([norm(r) for r in rows])
+
+#---User Registration---
+@app.post("/api/register_user")
+def register_user():
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    email = (body.get("email") or "").strip().lower()
+    phone = (body.get("phone") or "").strip()
+    role = (body.get("role") or "").strip().lower()
+    password = body.get("password") or ""
+    
+    pw_hash = generate_password_hash(password)
+
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users
+                  (email, password_hash, name, role, phone)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+                RETURNING id;
+                """,
+                (email, pw_hash, name, role, phone),
+            )
+            row = cur.fetchone()
+
+        if not row:
+            return jsonify({"ok": False, "error": "Email already exists"}), 409
+
+        new_id = row["id"] if isinstance(row, dict) else row[0]
+        return jsonify({"ok": True, "id": new_id}), 201
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))

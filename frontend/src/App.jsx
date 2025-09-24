@@ -8,6 +8,8 @@ import AddPropertiesPage from "./components/AddProperties";
 import ViewIndividualPropertiesPage from "./components/ViewIndividualProperties";
 import EditIndividualPropertiesPage from "./components/UpdateProperties";
 import "./index.css";
+import HomePage from "./components/HomePage";
+import SignUp from "./components/SignUp";
 
 // ==========================
 // Dashboard (User)
@@ -115,8 +117,12 @@ export default function App() {
                 <Route path="/properties/:id" element={<ViewIndividualPropertiesPage />} />
                 <Route path="/properties/edit/:id" element={<EditIndividualPropertiesPage />} />
 
+                {/*Guest routes */}
+                <Route path="/home" element={<HomePage />} />
+                <Route path="/signup" element={<SignUp />} />
+
                 {/* Default fallback */}
-                <Route path="*" element={<LoginPage />} />
+                <Route path="*" element={<HomePage />} />
             </Routes>
         </BrowserRouter>
     );
