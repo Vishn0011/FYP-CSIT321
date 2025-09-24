@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import api from "../api"; // import shared axios client
 import "./css/addProperties.css";
-
-const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api",
-});
 
 export default function AddProperties() {
     const navigate = useNavigate();
@@ -18,8 +14,8 @@ export default function AddProperties() {
         bathrooms: "",
         size: "",
         location: "",
-        photos: [], 
-        status: "Active",
+        photos: [],
+        status: "Pending",
     });
 
     async function handleSubmit(e) {
@@ -27,15 +23,13 @@ export default function AddProperties() {
         try {
             const payload = {
                 ...form,
-                agent_id: 44, // hardcode agent_id for now
                 photos: JSON.stringify(form.photos),
             };
 
             await api.post("/properties", payload);
 
             alert("Property created successfully!");
-            navigate("/properties"); // redirects to Properties page
-
+            navigate("/properties");
         } catch (err) {
             console.error(err.response?.data || err.message);
             alert("Failed to create property");
@@ -69,7 +63,9 @@ export default function AddProperties() {
                         <select
                             className="select"
                             value={form.property_type}
-                            onChange={(e) => setForm({ ...form, property_type: e.target.value })}
+                            onChange={(e) =>
+                                setForm({ ...form, property_type: e.target.value })
+                            }
                         >
                             <option>HDB</option>
                             <option>Bungalow</option>
@@ -91,7 +87,9 @@ export default function AddProperties() {
                             rows="4"
                             placeholder="Describe the property..."
                             value={form.description}
-                            onChange={(e) => setForm({ ...form, description: e.target.value })}
+                            onChange={(e) =>
+                                setForm({ ...form, description: e.target.value })
+                            }
                         />
                     </div>
 
@@ -155,7 +153,7 @@ export default function AddProperties() {
                         />
                     </div>
 
-                    {/* File Upload*/}
+                    {/* File Upload */}
                     <div className="full">
                         <label className="label">Property Photos</label>
                         <input
@@ -241,8 +239,16 @@ export default function AddProperties() {
 
                 {/* Footer actions */}
                 <div className="card-body flex gap-8 justify-end">
-                    <button type="button" className="btn btn-outline">Cancel</button>
-                    <button type="submit" className="btn btn-primary">Create Listing</button>
+                    <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => navigate("/properties")}
+                    >
+                        Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary">
+                        Create Listing
+                    </button>
                 </div>
             </form>
         </div>
