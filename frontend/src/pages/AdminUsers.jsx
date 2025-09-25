@@ -10,6 +10,8 @@ import { useEffect, useMemo, useState } from "react";
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+;
+
 
 export default function AdminUsers() {
   // ---------- URL/State ----------
@@ -20,6 +22,10 @@ export default function AdminUsers() {
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("all"); // admin|agent|homeowner|all
   const [status, setStatus] = useState("all"); // active|inactive|all
+
+  // sorting
+  const [sort, setSort] = useState("created_at");
+  const [order, setOrder] = useState("desc")
 
   // ---------- Data ----------
   const [data, setData] = useState({ data: [], page: 1, page_size: 20, total: 0 });
@@ -32,16 +38,16 @@ export default function AdminUsers() {
 
   useEffect(() => {
     let ignore = false;
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
 
     const url = new URL("/api/users", API_BASE);
     url.searchParams.set("page", String(page));
     url.searchParams.set("page_size", String(pageSize));
-    // NOTE: query/role/status will be sent in Step 2 when backend supports them
-    // url.searchParams.set("query", query);
-    // url.searchParams.set("role", role);
-    // url.searchParams.set("status", status);
+    if (query.trim()) url.searchParams.set("query", query.trim());
+    if (role !== "all") url.searchParams.set("role", role);
+    if (status !== "all") url.searchParams.set("status", status);
+    url.searchParams.set("sort", sort);
+    url.searchParams.set("order", order);
 
     fetch(url.toString(), { credentials: "include" })
       .then(async (res) => {
@@ -52,10 +58,8 @@ export default function AdminUsers() {
       .catch((e) => !ignore && setError(e.message))
       .finally(() => !ignore && setLoading(false));
 
-    return () => {
-      ignore = true;
-    };
-  }, [page, pageSize /*, query, role, status*/]);
+    return () => { ignore = true; };
+  }, [page, pageSize, query, role, status, sort, order]);
 
   const totalPages = Math.max(1, Math.ceil((data?.total || 0) / (data?.page_size || pageSize)));
 
@@ -73,6 +77,23 @@ export default function AdminUsers() {
       setSelected(new Set(data.data.map(u => u.id)));
     }
   }
+
+  function sortBy(col) {
+    if (sort === col) {
+      setOrder(prev => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSort(col);
+      setOrder("asc");
+    }
+    setPage(1);
+  }
+
+  const caret = (col) => (
+    <span className="ml-1 text-gray-400">
+      {sort === col ? (order === "asc" ? "▲" : "▼") : "↕"}
+    </span>
+  );
+
 
   // UI helpers
   const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
@@ -97,7 +118,7 @@ export default function AdminUsers() {
               <span className="material-symbols-outlined text-lg">add</span>
               <span>New User</span>
             </button>
-            <div className="h-10 w-10 rounded-full bg-cover bg-center" style={{backgroundImage: "url(https://images.unsplash.com/photo-1544006659-f0b21884ce1d?q=80&w=200&auto=format&fit=crop)"}} />
+            <div className="h-10 w-10 rounded-full bg-cover bg-center" style={{ backgroundImage: "url(https://images.unsplash.com/photo-1544006659-f0b21884ce1d?q=80&w=200&auto=format&fit=crop)" }} />
           </div>
         </div>
       </header>
@@ -130,22 +151,36 @@ export default function AdminUsers() {
               className="w-full pl-10 pr-3 h-10 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500"
               placeholder="Search by name or email (coming in Step 2)"
               value={query}
-              onChange={e => setQuery(e.target.value)}
+              onChange={e => { setQuery(e.target.value); setPage(1); }}
             />
           </div>
-          <select className="h-10 rounded-xl border border-gray-200 px-3" value={role} onChange={e=>setRole(e.target.value)}>
+          <select value={role} onChange={e => { setRole(e.target.value); setPage(1); }}>
             <option value="all">All roles</option>
             <option value="admin">Admin</option>
             <option value="agent">Agent</option>
             <option value="homeowner">homeowner</option>
           </select>
-          <select className="h-10 rounded-xl border border-gray-200 px-3" value={status} onChange={e=>setStatus(e.target.value)}>
+          <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}>
             <option value="all">All status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select>
           <div className="flex items-center gap-2">
-            <button className="h-10 px-4 rounded-xl border border-gray-200 hover:bg-gray-50">Reset</button>
+            <button
+              className="h-10 px-4 rounded-xl border border-gray-200 hover:bg-gray-50"
+              onClick={() => {
+                setQuery("");
+                setRole("all");
+                setStatus("all");
+                setSort("created_at");
+                setOrder("desc");
+                setPage(1);
+                setPageSize(20);
+              }}
+            >
+              Reset
+            </button>
+
           </div>
         </div>
 
@@ -156,15 +191,27 @@ export default function AdminUsers() {
             <table className="w-full text-sm text-left text-gray-700">
               <thead className="bg-gray-50 text-xs text-gray-600 uppercase">
                 <tr>
-                  <th className="p-4"><input type="checkbox" className="h-4 w-4 rounded border-gray-300" checked={allChecked} onChange={toggleAll}/></th>
-                  <th className="px-6 py-3">Name</th>
-                  <th className="px-6 py-3">Email</th>
-                  <th className="px-6 py-3">Role</th>
+                  <th className="p-4">
+                    <input type="checkbox" className="h-4 w-4 rounded border-gray-300"
+                      checked={allChecked} onChange={toggleAll} />
+                  </th>
+                  <th className="px-6 py-3 cursor-pointer select-none" onClick={() => sortBy("name")}>
+                    Name {caret("name")}
+                  </th>
+                  <th className="px-6 py-3 cursor-pointer select-none" onClick={() => sortBy("email")}>
+                    Email {caret("email")}
+                  </th>
+                  <th className="px-6 py-3 cursor-pointer select-none" onClick={() => sortBy("role")}>
+                    Role {caret("role")}
+                  </th>
                   <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Created</th>
+                  <th className="px-6 py-3 cursor-pointer select-none" onClick={() => sortBy("created_at")}>
+                    Created {caret("created_at")}
+                  </th>
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
+
               <tbody>
                 {loading && (
                   <tr><td className="px-6 py-6" colSpan={7}>Loading…</td></tr>
@@ -205,29 +252,29 @@ export default function AdminUsers() {
           {/* Footer: pagination */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t bg-white">
             <div className="text-sm text-gray-500">
-              Showing <span className="font-medium">{Math.min((page-1)*pageSize+1, data.total)}</span>–
-              <span className="font-medium">{Math.min(page*pageSize, data.total)}</span> of <span className="font-medium">{data.total}</span>
+              Showing <span className="font-medium">{Math.min((page - 1) * pageSize + 1, data.total)}</span>–
+              <span className="font-medium">{Math.min(page * pageSize, data.total)}</span> of <span className="font-medium">{data.total}</span>
             </div>
 
             <div className="flex items-center gap-3">
               <select
                 className="h-9 rounded-lg border border-gray-200 px-2"
                 value={pageSize}
-                onChange={(e)=>{ setPageSize(Number(e.target.value)); setPage(1); }}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
               >
-                {[10,20,50,100].map(s => <option key={s} value={s}>{s} / page</option>)}
+                {[10, 20, 50, 100].map(s => <option key={s} value={s}>{s} / page</option>)}
               </select>
 
               <div className="flex items-center gap-2">
                 <button
                   className="h-9 px-3 rounded-lg border border-gray-200 disabled:opacity-50"
-                  onClick={() => setPage(p => Math.max(1, p-1))}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page <= 1}
                 >Prev</button>
                 <span className="text-sm">Page {page} / {totalPages}</span>
                 <button
                   className="h-9 px-3 rounded-lg border border-gray-200 disabled:opacity-50"
-                  onClick={() => setPage(p => Math.min(totalPages, p+1))}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
                 >Next</button>
               </div>
