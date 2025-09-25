@@ -6,7 +6,6 @@ from db import query_all, execute, get_cursor, get_conn
 from auth import make_token, expires_at, auth_required, create_session
 from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
 import json
-from werkzeug.security import generate_password_hash
 
 load_dotenv()
 app = Flask(__name__)
@@ -337,8 +336,6 @@ def register_user():
     phone = (body.get("phone") or "").strip()
     role = (body.get("role") or "").strip().lower()
     password = body.get("password") or ""
-    
-    pw_hash = generate_password_hash(password)
 
     try:
         with get_conn() as conn, conn.cursor() as cur:
@@ -346,11 +343,11 @@ def register_user():
                 """
                 INSERT INTO users
                   (email, password_hash, name, role, phone)
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, crypt(%s, gen_salt('bf')), %s, %s, %s)
                 ON CONFLICT (email) DO NOTHING
                 RETURNING id;
                 """,
-                (email, pw_hash, name, role, phone),
+                (email, password, name, role, phone),
             )
             row = cur.fetchone()
 
