@@ -15,6 +15,17 @@ app = Flask(__name__)
 CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
 # CORS(app, supports_credentials=True, origins=[ALLOW_ORIGIN], methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "Authorization"], )
 
+def get_current_user():
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT u.id, u.email, u.role
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token = %s
+              AND s.expires_at > now()
+        """, [request.token])
+        return cur.fetchone()
+
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
@@ -60,6 +71,7 @@ def login():
         "user": {"id": user["id"], "email": user["email"], "name": user.get("name"), "role": user.get("role")}
     })
 
+#Auth Admin Login
 @app.post("/auth/admin/login")
 def admin_login():
     body = request.get_json(force=True, silent=True) or {}
@@ -71,18 +83,30 @@ def admin_login():
 
     with get_cursor() as cur:
         cur.execute("""
-            SELECT id, email, name, role
+            SELECT id, email, name, role, is_active,
+                   (crypt(%s, password_hash) = password_hash) AS pw_match
             FROM users
-            WHERE email = %s
-              AND crypt(%s, password_hash) = password_hash
-              AND COALESCE(is_active, TRUE)
+            WHERE LOWER(email) = LOWER(%s)
               AND role = 'admin'
-        """, [email, password])
+        """, [password, email])
         row = cur.fetchone()
-        if not row:
-            return jsonify({"error": "invalid admin credentials"}), 401
 
-    user = dict(row)
+    if not row:
+        return jsonify({"error": "admin account not found"}), 404
+
+    if not row["pw_match"]:
+        return jsonify({"error": "invalid password"}), 401
+
+    if row["is_active"] is not None and not row["is_active"]:
+        return jsonify({"error": "account inactive"}), 403
+
+    # Success ,create session
+    user = {
+        "id": row["id"],
+        "email": row["email"],
+        "name": row["name"],
+        "role": row["role"],
+    }
     token, exp = create_session(user["id"])
 
     return jsonify({
@@ -90,6 +114,7 @@ def admin_login():
         "expires_at": exp.isoformat(),
         "user": user
     })
+
 
 
 # --- Who am I (protected) ---
@@ -136,27 +161,47 @@ def list_users():
 #     port = int(os.getenv("PORT", "8000"))
 #     app.run(host="0.0.0.0", port=port, debug=True)
 
-
-# --- PROPERTIES (CRUD for agent properties) ---
-@app.get("/api/properties")
-def list_properties():
-    # read ?agent_id=2 from query string
-    agent_id = request.args.get("agent_id", type=int)
-
-    if not agent_id:
-        return jsonify({"error": "agent_id required"}), 400
-
-    rows = query_all(
-        """
+# List all active properties (public marketplace view)
+@app.get("/api/properties/all")
+def list_all_properties():
+    rows = query_all("""
         SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
                size, location, photos, status, created_at, updated_at
         FROM properties
-        WHERE agent_id = %s
-        ORDER BY created_at DESC;
-        """,
-        [agent_id]
-    )
+        WHERE status = 'Active'
+        ORDER BY created_at DESC
+    """)
     return jsonify(rows)
+
+# --- PROPERTIES (CRUD for agent properties) ---
+#list properties by agent
+@app.get("/api/properties")
+def list_properties():
+    agent_id = request.args.get("agent_id", type=int)
+    status = request.args.get("status")
+
+    query = """
+        SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
+               size, location, photos, status, created_at, updated_at
+        FROM properties
+        WHERE 1=1
+    """
+    params = []
+
+    if agent_id:
+        query += " AND agent_id = %s"
+        params.append(agent_id)
+
+    if status:
+        query += " AND status = %s"
+        params.append(status)
+
+    query += " ORDER BY created_at DESC"
+
+    rows = query_all(query, params)
+    return jsonify(rows)
+
+
 
 #get individual property by id
 @app.get("/api/properties/<int:prop_id>")
@@ -174,11 +219,18 @@ def get_property(prop_id):
         return jsonify({"error": "Property not found"}), 404
     return jsonify(row[0])
 
+#add property
 @app.post("/api/properties")
+@auth_required   # make sure only logged-in users can hit this
 def add_property():
     data = request.get_json(force=True)
-    
-    agent_id = 44   # hardcoded to agent@example.com (id = 2 in your users table)
+
+    # get the logged-in user
+    user = get_current_user()
+    if not user or user["role"] != "agent":
+        return jsonify({"error": "Only agents can add properties"}), 403
+
+    agent_id = user["id"]   # dynamic agent id from session
 
     title = data.get("title")
     ptype = data.get("property_type")
@@ -210,8 +262,7 @@ def add_property():
     )
     return jsonify(row), 201
 
-
-
+#edit property
 @app.patch("/api/properties/edit/<int:prop_id>")
 def update_property(prop_id):
     data = request.get_json(force=True)
@@ -248,7 +299,7 @@ def update_property(prop_id):
         return jsonify({"error": "Property not found or not updated"}), 404
     return jsonify(row)
 
-
+#delete property
 @app.delete("/api/properties/<int:prop_id>")
 def delete_property(prop_id):
     row = execute(
@@ -260,34 +311,22 @@ def delete_property(prop_id):
         return jsonify({"error": "Property not found"}), 404
     return jsonify({"deleted": row["id"]})
 
-#---Guest APIs---
-#---Get featured properties for HomePage---
-@app.get("/api/get_featured_properties")
-def get_featured_properties():
-    sql = """
-        SELECT id, location, price, bedrooms, bathrooms, size
-        FROM properties
-        ORDER BY RANDOM()
-        LIMIT 3;
-    """
-    try:
-        rows = query_all(sql)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+#admin approve property
+@app.patch("/api/properties/<int:prop_id>/approve")
+def approve_property(prop_id):
+    with get_cursor() as cur:
+        cur.execute("""
+            UPDATE properties
+            SET status = 'Active'
+            WHERE id = %s
+            RETURNING id, status
+        """, [prop_id])
+        row = cur.fetchone()
 
-    def norm(r):
-        return {
-            "id": r.get("id"),
-            "location": r.get("location"),
-            "price": float(r["price"]) if r.get("price") is not None else None,
-            "bedrooms": int(r["bedrooms"]) if r.get("bedrooms") is not None else None,
-            "bathrooms": int(r["bathrooms"]) if r.get("bathrooms") is not None else None,
-            "size": int(r["size"]) if r.get("size") is not None else None,
-        }
+    if not row:
+        return jsonify({"error": "Property not found"}), 404
 
-    return jsonify([norm(r) for r in rows])
+    return jsonify({"message": "Property approved", "property": dict(row)})
 
 #---User Registration---
 @app.post("/api/register_user")

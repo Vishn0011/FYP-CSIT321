@@ -37,20 +37,6 @@ export default function AdminLogin() {
 
   return (
     <div className="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
-      <header className="fixed top-0 left-0 right-0 z-50 bg-emerald-600 text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link to="/" className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-3xl">admin_panel_settings</span>
-              <span className="text-xl font-bold">AgentPro Admin</span>
-            </Link>
-            <div className="flex items-center space-x-4">
-              <Link className="px-3 py-2 text-sm font-medium border border-white rounded-lg hover:bg-white hover:text-emerald-700 transition" to="/login">User Login</Link>
-            </div>
-          </div>
-        </div>
-      </header>
-
       <main className="flex items-center justify-center flex-1 pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-md space-y-8">
           <div className="bg-white p-8 shadow-lg rounded-xl">
