@@ -12,7 +12,9 @@ const api = axios.create({
 
 export default function PropertiesPage() {
     const navigate = useNavigate();
-    const agentId = 44;
+    // Load logged-in user
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const agentId = user?.id;
     const [properties, setProperties] = useState([]);
     const [stats, setStats] = useState({ total: 0, active: 0, pending: 0 });
 
@@ -65,7 +67,7 @@ export default function PropertiesPage() {
                     + New Listing
                 </Link>
             </div>
-            <p className="muted-text">Welcome back, Alex! This is a overview of your listings and performance.</p>
+            <p className="muted-text">Welcome back, {user.name}! This is a overview of your listings and performance.</p>
 
             {/* Stats cards */}
             <div className="stats-grid mt-24">

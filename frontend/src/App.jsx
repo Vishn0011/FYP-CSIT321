@@ -3,12 +3,20 @@ import LoginPage from "./pages/LoginPage";
 import AdminLogin from "./pages/AdminLogin";
 import RequireAuth from "./components/RequireAuth";
 import RequireAdmin from "./components/RequireAdmin";
+import RequireAgent from "./components/RequireAgent";
 import PropertiesPage from "./components/PropertiesPage";
 import AddPropertiesPage from "./components/AddProperties";
 import ViewIndividualPropertiesPage from "./components/ViewIndividualProperties";
 import EditIndividualPropertiesPage from "./components/UpdateProperties";
 import AdminUsers from "./pages/AdminUsers";
 import "./index.css";
+import Unauthorized from "./pages/Unauthorized";
+import HomePage from "./pages/HomePage"
+import Nav from "./components/Nav";
+import { AuthProvider } from "./AuthContext"; 
+import AdminDashboard from "./pages/AdminDashboard";
+import AllPropertiesPage from "./pages/AllPropertiesPage";
+import PublicPropertyPage from "./pages/PublicPropertyPage";
 
 // ==========================
 // Dashboard (User)
@@ -50,35 +58,16 @@ function Dashboard() {
 // ==========================
 // Dashboard (Admin)
 // ==========================
-function AdminDashboard() {
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
+//function AdminDashboard() {
+//    const user = JSON.parse(localStorage.getItem("user") || "{}");
+//    return (
+//        <main className="p-6">
+//            <h1 className="text-2xl font-bold mb-2">Admin Dashboard</h1>
+//            <p>Welcome, {user?.name || user?.email} (admin).</p>
+//        </main>
+//    );
+//}
 
-    return (
-        <main className="p-6">
-            <h1 className="text-2xl font-bold mb-2">Admin Dashboard</h1>
-            <p>Welcome, {user?.name || user?.email} (admin).</p>
-        </main>
-    );
-}
-
-// ==========================
-// Navigation Bar
-// ==========================
-function Nav() {
-    return (
-        <nav className="flex justify-between items-center px-6 py-3 bg-gray-800 text-white">
-            <div className="font-bold text-lg">Aspect Real Estate</div>
-            <div className="flex gap-4">
-                <Link to="/agents">Agents</Link>
-                <Link to="/predict">Predict</Link>
-                <Link to="/dashboard">Dashboard</Link>
-                <Link to="/compare">Compare</Link>
-                <Link to="/reports">Reports</Link>
-                <Link to="/properties">Properties</Link>
-            </div>
-        </nav>
-    );
-}
 
 // ==========================
 // Main App
@@ -86,11 +75,16 @@ function Nav() {
 export default function App() {
     return (
         <BrowserRouter>
+        <AuthProvider>
+            {/* Nav is outside Routes so it always shows */}
             <Nav />
             <Routes>
                 {/* Auth routes */}
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/admin/login" element={<AdminLogin />} />
+                <Route path="/properties/all" element={<AllPropertiesPage />} />
+                <Route path="/explore/properties/:id" element={<PublicPropertyPage />} />
+
 
                 {/* Protected routes */}
                 <Route
@@ -121,14 +115,50 @@ export default function App() {
                 />
 
                 {/* Property routes */}
-                <Route path="/properties" element={<PropertiesPage />} />
-                <Route path="/addproperties" element={<AddPropertiesPage />} />
-                <Route path="/properties/:id" element={<ViewIndividualPropertiesPage />} />
-                <Route path="/properties/edit/:id" element={<EditIndividualPropertiesPage />} />
+                <Route
+                    path="/properties"
+                    element={
+                        <RequireAgent>
+                            <PropertiesPage />
+                        </RequireAgent>
+                    }
+                />
+
+                <Route
+                    path="/addproperties"
+                    element={
+                        <RequireAgent>
+                            <AddPropertiesPage />
+                        </RequireAgent>
+                    }
+                />
+
+                <Route
+                    path="/properties/:id"
+                    element={
+                        <RequireAgent>
+                            <ViewIndividualPropertiesPage />
+                        </RequireAgent>
+                    }
+                />
+
+                <Route
+                    path="/properties/edit/:id"
+                    element={
+                        <RequireAgent>
+                            <EditIndividualPropertiesPage />
+                        </RequireAgent>
+                    }
+                />
+
+                {/* Unauthorized route */}
+                <Route path="/unauthorized" element={<Unauthorized />} />
+
 
                 {/* Default fallback */}
-                <Route path="*" element={<LoginPage />} />
+                <Route path="*" element={<HomePage />} />
             </Routes>
+            </AuthProvider>
         </BrowserRouter>
     );
 }
