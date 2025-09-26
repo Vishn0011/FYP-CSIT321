@@ -8,8 +8,6 @@ ALLOWED_PAGE_SIZES = {10, 20, 50, 100}
 
 @users_bp.get("")
 def list_users():
-    from psycopg2.extras import RealDictCursor
-    from flask import request, jsonify
 
     # --- pagination ---
     def clamp(n, lo, hi): return max(lo, min(hi, n))
@@ -74,3 +72,37 @@ def list_users():
 
     return jsonify({"data": rows, "page": page, "page_size": page_size, "total": total})
 
+@users_bp.put("/<int:user_id>")
+def update_user(user_id):
+
+    body = request.get_json(silent=True) or {}
+    allowed = {"name", "role", "is_active", "phone"}  # expand later
+    updates = []
+    params = []
+
+    for k, v in body.items():
+        if k in allowed:
+            updates.append(f"{k} = %s")
+            params.append(v)
+
+    if not updates:
+        return jsonify({"error": {"code": "NO_CHANGES", "message": "Nothing to update"}}), 400
+
+    params.append(user_id)
+
+    sql = f"""
+      UPDATE users
+      SET {", ".join(updates)}, updated_at = now()
+      WHERE id = %s
+      RETURNING id, email, name, role, is_active, phone, created_at, updated_at
+    """
+
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": {"code": "NOT_FOUND", "message": "User not found"}}), 404
+            conn.commit()
+
+    return jsonify(row)
