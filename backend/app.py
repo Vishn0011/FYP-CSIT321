@@ -162,6 +162,84 @@ def hb_remove_favorite(property_id):
 def hb_ping():
     return jsonify({"ok": True})
 
+# ---------- AUTH ----------
+from datetime import datetime, timedelta
+import secrets
+
+def _current_user_from_header():
+    """Reads Bearer token and returns user row or None."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[7:]
+    rows = query_all(
+        """
+        SELECT u.id, u.email, u.name, u.role
+        FROM sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.token = %s AND s.expires_at > NOW()
+        LIMIT 1
+        """,
+        [token],
+    )
+    return rows[0] if rows else None
+
+@app.route("/auth/login", methods=["POST", "OPTIONS"])
+def auth_login():
+    # CORS preflight
+    if request.method == "OPTIONS":
+        return ("", 200)
+
+    data = request.get_json(force=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    role = (data.get("role") or "").strip().lower()  # "homeowner" (homebuyer) or "agent"
+
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    # Build SQL with optional role filter.
+    # Use Postgres pgcrypto `crypt()` to verify bcrypt hash.
+    params = [email, password]
+    role_sql = ""
+    if role:
+        role_sql = " AND u.role = %s "
+        params.append(role)
+
+    rows = query_all(
+        f"""
+        SELECT u.id, u.email, u.name, u.role
+        FROM users u
+        WHERE u.email = %s
+          AND u.password_hash = crypt(%s, u.password_hash)
+          AND COALESCE(u.is_active, TRUE) = TRUE
+          {role_sql}
+        LIMIT 1
+        """,
+        params,
+    )
+    if not rows:
+        return jsonify({"error": "invalid credentials"}), 401
+
+    user = rows[0]
+
+    # Create a session token (valid 7 days)
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(days=7)
+    execute(
+        "INSERT INTO sessions(user_id, token, expires_at) VALUES(%s, %s, %s);",
+        [user["id"], token, expires_at],
+    )
+
+    return jsonify({"token": token, "user": user})
+
+@app.get("/me")
+def me():
+    user = _current_user_from_header()
+    if not user:
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({"user": user})
+
 # put in last
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
