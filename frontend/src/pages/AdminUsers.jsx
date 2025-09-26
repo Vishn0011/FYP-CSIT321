@@ -94,6 +94,41 @@ export default function AdminUsers() {
     </span>
   );
 
+  async function apiUpdateUser(id, patch) {
+    const url = new URL(`/api/users/${id}`, API_BASE);
+    const res = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async function toggleActive(u) {
+    try {
+      setData(curr => ({
+        ...curr,
+        data: curr.data.map(x =>
+          x.id === u.id ? { ...x, is_active: !u.is_active } : x
+        ),
+      }));
+      await apiUpdateUser(u.id, { is_active: !u.is_active });
+    } catch (e) {
+      // rollback on fail
+      setData(curr => ({
+        ...curr,
+        data: curr.data.map(x =>
+          x.id === u.id ? { ...x, is_active: u.is_active } : x
+        ),
+      }));
+      console.error(e);
+      alert("Failed to update status");
+    }
+  }
+
+
 
   // UI helpers
   const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
@@ -229,12 +264,20 @@ export default function AdminUsers() {
                     <td className="px-6 py-4">{u.email}</td>
                     <td className="px-6 py-4 capitalize">{u.role || "—"}</td>
                     <td className="px-6 py-4">
-                      {u.is_active ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 text-xs font-semibold">Active</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 text-gray-700 border border-gray-200 px-2.5 py-1 text-xs font-semibold">Inactive</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => toggleActive(u)}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold
+                          ${u.is_active
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                            : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"}`}
+                        title={u.is_active ? "Click to deactivate" : "Click to activate"}>
+                        {u.is_active ? "Active" : "Inactive"}
+                      </button>
                     </td>
+
+
+
                     <td className="px-6 py-4">{fmtDate(u.created_at)}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="inline-flex items-center gap-2">
