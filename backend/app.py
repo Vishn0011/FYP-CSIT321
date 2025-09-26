@@ -1,25 +1,66 @@
 import os
+from datetime import datetime, timedelta, timezone
+import secrets
+
 from flask import Flask, jsonify, request
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from dotenv import load_dotenv
+
 from db import query_all, execute
 
 load_dotenv()
 app = Flask(__name__)
 
-# Allow frontend (Vite dev server) to call this API in dev
-CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
+# -----------------------------------------------------------------------------
+# CORS
+# -----------------------------------------------------------------------------
+# Global CORS for all /api/* routes (and auth) from your Vite dev origins.
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]
+        },
+        r"/auth/*": {
+            "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]
+        },
+        r"/me": {
+            "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]
+        },
+    },
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+)
 
+# As a belt-and-suspenders, ensure CORS headers always present after request
+@app.after_request
+def _add_cors_headers(resp):
+    # Only add if not already added by Flask-CORS (harmless if duplicated)
+    resp.headers.setdefault("Access-Control-Allow-Origin", request.headers.get("Origin", "http://localhost:5173"))
+    resp.headers.setdefault("Access-Control-Allow-Credentials", "true")
+    resp.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    resp.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    return resp
+
+# -----------------------------------------------------------------------------
+# Health
+# -----------------------------------------------------------------------------
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
 
+# -----------------------------------------------------------------------------
+# Users (sample)
+# -----------------------------------------------------------------------------
 @app.get("/api/users")
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"])
 def list_users():
     rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
     return jsonify(rows)
 
 @app.post("/api/users")
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"])
 def add_user():
     data = request.get_json(force=True)
     email = data.get("email")
@@ -34,8 +75,11 @@ def add_user():
     )
     return jsonify(row), 201
 
-# ---------- HOMEBUYER ROUTES ----------
+# -----------------------------------------------------------------------------
+# HOMEBUYER ROUTES
+# -----------------------------------------------------------------------------
 @app.get("/api/homebuyer/properties")
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 def hb_search_properties():
     q         = (request.args.get("q") or "").strip().lower()
     min_price = request.args.get("min_price")
@@ -79,6 +123,7 @@ def hb_search_properties():
     return jsonify({"success": True, "items": rows})
 
 @app.get("/api/homebuyer/properties/<int:prop_id>")
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 def hb_property_detail(prop_id):
     rows = query_all(
         """
@@ -94,78 +139,7 @@ def hb_property_detail(prop_id):
         return jsonify({"success": False, "error": "not found"}), 404
     return jsonify({"success": True, "property": rows[0]})
 
-@app.get("/api/homebuyer/favorites")
-def hb_list_favorites():
-    user_id = request.args.get("user_id")
-    if not user_id:
-        return jsonify({"success": False, "error": "user_id required"}), 400
-
-    rows = query_all(
-        """
-        SELECT f.property_id AS id,
-               p.title, p.location, p.price, p.bedrooms, p.created_at
-        FROM homebuyer_favorites f
-        JOIN properties p ON p.id = f.property_id
-        WHERE f.user_id = %s
-        ORDER BY f.created_at DESC
-        LIMIT 50;
-        """,
-        [user_id]
-    )
-    return jsonify({"success": True, "items": rows})
-
-@app.post("/api/homebuyer/favorites")
-def hb_add_favorite():
-    data = request.get_json(force=True)
-    user_id = data.get("user_id")
-    property_id = data.get("property_id")
-    if not user_id or not property_id:
-        return jsonify({"success": False, "error": "user_id and property_id required"}), 400
-
-    exists = query_all("SELECT 1 FROM properties WHERE id=%s LIMIT 1;", [property_id])
-    if not exists:
-        return jsonify({"success": False, "error": "property not found"}), 404
-
-    row = execute(
-        """
-        INSERT INTO homebuyer_favorites(user_id, property_id)
-        VALUES (%s, %s)
-        ON CONFLICT (user_id, property_id) DO NOTHING
-        RETURNING id, user_id, property_id, created_at;
-        """,
-        [user_id, property_id],
-        return_row=True
-    )
-    return jsonify({"success": True, "favorite": row})
-
-@app.delete("/api/homebuyer/favorites/<int:property_id>")
-def hb_remove_favorite(property_id):
-    user_id = request.args.get("user_id")
-    if not user_id:
-        return jsonify({"success": False, "error": "user_id required"}), 400
-
-    row = execute(
-        """
-        DELETE FROM homebuyer_favorites
-        WHERE user_id = %s AND property_id = %s
-        RETURNING property_id;
-        """,
-        [user_id, property_id],
-        return_row=True
-    )
-    if not row:
-        return jsonify({"success": False, "error": "not found"}), 404
-    return jsonify({"success": True, "removed": row})
-
-# quick sanity
-@app.get("/api/homebuyer/ping")
-def hb_ping():
-    return jsonify({"ok": True})
-
-# ---------- AUTH ----------
-from datetime import datetime, timedelta
-import secrets
-
+# ---------------------- FAVOURITES (token-based user) ------------------------
 def _current_user_from_header():
     """Reads Bearer token and returns user row or None."""
     auth = request.headers.get("Authorization", "")
@@ -184,7 +158,106 @@ def _current_user_from_header():
     )
     return rows[0] if rows else None
 
+@app.route("/api/homebuyer/favorites", methods=["GET", "POST", "OPTIONS"])
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+def hb_favorites_collection():
+    # Preflight
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    user = _current_user_from_header()
+    if not user:
+        return jsonify({"success": False, "error": "unauthorized"}), 401
+
+    if request.method == "GET":
+        rows = query_all(
+            """
+            SELECT f.property_id AS id,
+                   p.title, p.location, p.price, p.bedrooms, p.created_at
+            FROM homebuyer_favorites f
+            JOIN properties p ON p.id = f.property_id
+            WHERE f.user_id = %s
+            ORDER BY f.created_at DESC
+            LIMIT 50;
+            """,
+            [user["id"]],
+        )
+        return jsonify({"success": True, "items": rows})
+
+    # POST (add favourite)
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({"success": False, "error": "invalid json"}), 400
+
+    property_id = data.get("property_id")
+    if not property_id:
+        return jsonify({"success": False, "error": "property_id required"}), 400
+
+    exists = query_all("SELECT 1 FROM properties WHERE id=%s LIMIT 1;", [property_id])
+    if not exists:
+        return jsonify({"success": False, "error": "property not found"}), 404
+
+    row = execute(
+        """
+        INSERT INTO homebuyer_favorites(user_id, property_id)
+        VALUES (%s, %s)
+        ON CONFLICT (user_id, property_id) DO NOTHING
+        RETURNING id, user_id, property_id, created_at;
+        """,
+        [user["id"], property_id],
+        return_row=True,
+    )
+
+    # If it already existed, fetch the existing record so the client always
+    # receives a consistent payload shape.
+    if not row:
+        got = query_all(
+            """
+            SELECT id, user_id, property_id, created_at
+            FROM homebuyer_favorites
+            WHERE user_id = %s AND property_id = %s
+            LIMIT 1;
+            """,
+            [user["id"], property_id],
+        )
+        row = got[0] if got else None
+
+    return jsonify({"success": True, "favorite": row})
+
+@app.route("/api/homebuyer/favorites/<int:property_id>", methods=["DELETE", "OPTIONS"])
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+def hb_remove_favorite(property_id):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    user = _current_user_from_header()
+    if not user:
+        return jsonify({"success": False, "error": "unauthorized"}), 401
+
+    row = execute(
+        """
+        DELETE FROM homebuyer_favorites
+        WHERE user_id = %s AND property_id = %s
+        RETURNING property_id;
+        """,
+        [user["id"], property_id],
+        return_row=True,
+    )
+    if not row:
+        return jsonify({"success": False, "error": "not found"}), 404
+    return jsonify({"success": True, "removed": row})
+
+@app.get("/api/homebuyer/ping")
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+def hb_ping():
+    return jsonify({"ok": True})
+
+# -----------------------------------------------------------------------------
+# AUTH
+# -----------------------------------------------------------------------------
 @app.route("/auth/login", methods=["POST", "OPTIONS"])
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"])
 def auth_login():
     # CORS preflight
     if request.method == "OPTIONS":
@@ -193,13 +266,16 @@ def auth_login():
     data = request.get_json(force=True) or {}
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
-    role = (data.get("role") or "").strip().lower()  # "homeowner" (homebuyer) or "agent"
+    role = (data.get("role") or "").strip().lower()
+
+    # Accept both “homebuyer” and “homeowner”
+    if role == "homebuyer":
+        role = "homeowner"
 
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
 
-    # Build SQL with optional role filter.
-    # Use Postgres pgcrypto `crypt()` to verify bcrypt hash.
+    # Build SQL with optional role filter; if no role is supplied we don't filter by role
     params = [email, password]
     role_sql = ""
     if role:
@@ -225,6 +301,7 @@ def auth_login():
 
     # Create a session token (valid 7 days)
     token = secrets.token_urlsafe(32)
+    # (utcnow is fine in dev; production should use timezone-aware)
     expires_at = datetime.utcnow() + timedelta(days=7)
     execute(
         "INSERT INTO sessions(user_id, token, expires_at) VALUES(%s, %s, %s);",
@@ -233,14 +310,18 @@ def auth_login():
 
     return jsonify({"token": token, "user": user})
 
+
 @app.get("/me")
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"])
 def me():
     user = _current_user_from_header()
     if not user:
         return jsonify({"error": "unauthorized"}), 401
     return jsonify({"user": user})
 
-# put in last
+# -----------------------------------------------------------------------------
+# Run
+# -----------------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     app.run(host="0.0.0.0", port=port, debug=True)
