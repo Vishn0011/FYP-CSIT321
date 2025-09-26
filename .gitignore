@@ -23,3 +23,6 @@ __pycache__/
 *.pyc
 homebuyer.bundle
 
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/

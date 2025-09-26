@@ -1,113 +1,130 @@
-import { Routes, Route, Link, Navigate } from "react-router-dom";
-
-// Pages
-import HomebuyerSearch from "./pages/HomebuyerSearch.jsx";
-import HomebuyerPropertyDetail from "./pages/HomebuyerPropertyDetail.jsx";
-import HomebuyerFavourites from "./pages/HomebuyerFavourites.jsx";
-import DevPropertyProbe from "./pages/DevPropertyProbe.jsx";
-import Login from "./pages/Login.jsx";
-
-// Auth
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import LoginPage from "./pages/LoginPage.jsx";
+import AdminLogin from "./pages/AdminLogin.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
-import useAuth from "./hooks/useAuth.js";
-import { logout } from "./services/auth";
+import RequireAdmin from "./components/RequireAdmin.jsx";
+import RequireAgent from "./components/RequireAgent.jsx";
+import PropertiesPage from "./components/PropertiesPage.jsx";
+import AddPropertiesPage from "./components/AddProperties.jsx";
+import ViewIndividualPropertiesPage from "./components/ViewIndividualProperties.jsx";
+import EditIndividualPropertiesPage from "./components/UpdateProperties.jsx";
+import "./index.css";
+import SignUp from "./components/SignUp.jsx";
+import Unauthorized from "./pages/Unauthorized.jsx";
+import HomePage from "./pages/HomePage.jsx";
+import Nav from "./components/Nav.jsx";
+import { AuthProvider } from "./AuthContext.jsx";
+import AdminDashboard from "./pages/AdminDashboard.jsx";
+import AllPropertiesPage from "./pages/AllPropertiesPage.jsx";
+import PublicPropertyPage from "./pages/PublicPropertyPage.jsx";
 
-function App() {
-  const { user } = useAuth();
+// ==========================
+// Dashboard (User)
+// ==========================
+function Dashboard() {
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   return (
-    <div style={{ fontFamily: "sans-serif", padding: 24 }}>
-      <h1>FYP Frontend</h1>
-
-      <nav
-        style={{
-          display: "flex",
-          gap: "1rem",
-          marginBottom: "1rem",
-          flexWrap: "wrap",
+    <main className="p-6">
+      <h1 className="text-2xl font-bold mb-2">Dashboard</h1>
+      <p>Welcome, {user?.name || user?.email} ({user?.role}).</p>
+      <button
+        className="mt-4 px-4 py-2 rounded bg-gray-900 text-white"
+        onClick={async () => {
+          const token = localStorage.getItem("token");
+          if (token) {
+            await fetch(
+              `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/auth/logout`,
+              { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+          }
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          window.location.href = "/login";
         }}
       >
-        {/* Links only after login */}
-        {user && <Link to="/homebuyer/search">HB: Search</Link>}
-        {user && <Link to="/homebuyer/favourites">HB: Favourites</Link>}
-
-        {!user ? (
-          <Link to="/login">Login</Link>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              logout();              // clears token + notifies app
-              window.location.href = "/login";
-            }}
-            style={{
-              border: "1px solid #ccccccff",
-              borderRadius: 6,
-              padding: "2px 8px",
-            }}
-          >
-            Logout {user?.email ? `(${user.email})` : ""}
-          </button>
-        )}
-      </nav>
-
-      <Routes>
-        {/* Default route → if logged in go to Search, else Login */}
-        <Route
-          path="/"
-          element={
-            user ? (
-              <Navigate to="/homebuyer/search" replace />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-
-        {/* Protected routes */}
-        <Route
-          path="/homebuyer/search"
-          element={
-            <RequireAuth>
-              <HomebuyerSearch />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/homebuyer/favourites"
-          element={
-            <RequireAuth>
-              <HomebuyerFavourites />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/homebuyer/property/:id"
-          element={
-            <RequireAuth>
-              <HomebuyerPropertyDetail />
-            </RequireAuth>
-          }
-        />
-
-        {/* Dev + Auth */}
-        <Route path="/dev/probe" element={<DevPropertyProbe />} />
-        <Route path="/login" element={<Login />} />
-
-        {/* Fallback */}
-        <Route
-          path="*"
-          element={
-            user ? (
-              <Navigate to="/homebuyer/search" replace />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-      </Routes>
-    </div>
+        Logout
+      </button>
+    </main>
   );
 }
 
-export default App;
+// ==========================
+// Main App
+// ==========================
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Nav />
+        <Routes>
+          {/* Auth routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/properties/all" element={<AllPropertiesPage />} />
+          <Route path="/explore/properties/:id" element={<PublicPropertyPage />} />
+
+          {/* Protected routes */}
+          <Route
+            path="/dashboard"
+            element={
+              <RequireAuth>
+                <Dashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <RequireAdmin>
+                <AdminDashboard />
+              </RequireAdmin>
+            }
+          />
+
+          {/* Property routes */}
+          <Route
+            path="/properties"
+            element={
+              <RequireAgent>
+                <PropertiesPage />
+              </RequireAgent>
+            }
+          />
+          <Route
+            path="/addproperties"
+            element={
+              <RequireAgent>
+                <AddPropertiesPage />
+              </RequireAgent>
+            }
+          />
+          <Route
+            path="/properties/:id"
+            element={
+              <RequireAgent>
+                <ViewIndividualPropertiesPage />
+              </RequireAgent>
+            }
+          />
+          <Route
+            path="/properties/edit/:id"
+            element={
+              <RequireAgent>
+                <EditIndividualPropertiesPage />
+              </RequireAgent>
+            }
+          />
+
+          {/* Unauthorized + Guest */}
+          <Route path="/unauthorized" element={<Unauthorized />} />
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/signup" element={<SignUp />} />
+
+          {/* Default fallback */}
+          <Route path="*" element={<HomePage />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
