@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 
 from db import query_all, execute
 
+
+from otp import create_otp, verify_otp_code
+from mailer import send_otp_email
+
+
 load_dotenv()
 app = Flask(__name__)
 
@@ -256,6 +261,122 @@ def hb_ping():
 # -----------------------------------------------------------------------------
 # AUTH
 # -----------------------------------------------------------------------------
+
+
+# --- Step 1: verify password, send OTP (no session yet) ---
+@app.route("/auth/login-step1", methods=["POST", "OPTIONS"])
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"])
+def auth_login_step1():
+    if request.method == "OPTIONS":
+        return ("", 200)
+
+    data = request.get_json(force=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    role = (data.get("role") or "").strip().lower()  # optional
+
+    # 🔹 normalize: accept "homebuyer" from UI, use "homeowner" in DB
+    if role == "homebuyer":
+        role = "homeowner"
+
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    # credential check (same as your /auth/login)
+    params = [email, password]
+    role_sql = ""
+    if role:
+        role_sql = " AND u.role = %s "
+        params.append(role)
+
+    rows = query_all(
+        f"""
+        SELECT u.id, u.email, u.name, u.role
+        FROM users u
+        WHERE u.email = %s
+          AND u.password_hash = crypt(%s, u.password_hash)
+          AND COALESCE(u.is_active, TRUE) = TRUE
+          {role_sql}
+        LIMIT 1
+        """,
+        params,
+    )
+    if not rows:
+        return jsonify({"error": "invalid credentials"}), 401
+
+    user = rows[0]
+
+    # create & send OTP (10 min)
+    code = create_otp(user_id=user["id"], purpose="login", ttl_minutes=10)
+    send_otp_email(user["email"], code)
+
+    # hint for UI; DO NOT expose the code
+    masked = user["email"][0:2] + "•••@" + user["email"].split("@")[-1]
+    return jsonify({"otp_sent": True, "user": {"id": user["id"], "email_hint": masked, "role": user["role"]}})
+
+
+# --- Step 2: verify OTP, then issue the normal session token ---
+@app.route("/auth/login-step2", methods=["POST", "OPTIONS"])
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"])
+def auth_login_step2():
+    if request.method == "OPTIONS":
+        return ("", 200)
+
+    data = request.get_json(force=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    code = (data.get("code") or "").strip()
+    role = (data.get("role") or "").strip().lower()  # optional
+
+    # 🔹 normalize: accept "homebuyer" from UI, use "homeowner" in DB
+    if role == "homebuyer":
+        role = "homeowner"
+
+    if not email or not code:
+        return jsonify({"error": "email and code required"}), 400
+
+    # find user (optionally role-constrained)
+    params = [email]
+    role_sql = ""
+    if role:
+        role_sql = " AND u.role = %s "
+        params.append(role)
+
+    rows = query_all(
+        f"""
+        SELECT u.id, u.email, u.name, u.role
+        FROM users u
+        WHERE u.email = %s
+          AND COALESCE(u.is_active, TRUE) = TRUE
+          {role_sql}
+        LIMIT 1
+        """,
+        params,
+    )
+    if not rows:
+        return jsonify({"error": "user not found"}), 404
+
+    user = rows[0]
+
+    # verify OTP
+    ok = verify_otp_code(user_id=user["id"], code=code, purpose="login")
+    if not ok:
+        return jsonify({"error": "invalid or expired code"}), 401
+
+    # create the normal session (same as your /auth/login)
+     
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    execute(
+             "INSERT INTO sessions(user_id, token, expires_at) VALUES(%s, %s, %s);",
+            [user["id"], token, expires_at],
+      )
+
+    return jsonify({"token": token, "user": user})
+
+
+
+
+
 @app.route("/auth/login", methods=["POST", "OPTIONS"])
 @cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"])
 def auth_login():
@@ -300,15 +421,17 @@ def auth_login():
     user = rows[0]
 
     # Create a session token (valid 7 days)
+    
     token = secrets.token_urlsafe(32)
-    # (utcnow is fine in dev; production should use timezone-aware)
-    expires_at = datetime.utcnow() + timedelta(days=7)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     execute(
-        "INSERT INTO sessions(user_id, token, expires_at) VALUES(%s, %s, %s);",
-        [user["id"], token, expires_at],
+              "INSERT INTO sessions(user_id, token, expires_at) VALUES(%s, %s, %s);",
+               [user["id"], token, expires_at],
     )
 
     return jsonify({"token": token, "user": user})
+
+   
 
 
 @app.get("/me")

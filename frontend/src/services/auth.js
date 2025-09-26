@@ -1,22 +1,48 @@
+// frontend/src/services/auth.js
 import api from "../lib/api";
 import { emitAuthChanged } from "../lib/authBus";
 
-// POST /auth/login -> { token, user? }
-export async function login({ email, password, role }) {
-  const payload = { email, password };
-  if (role) payload.role = role;
-  const data = await api.post("/auth/login", payload);
+/**
+ * Save the session and notify the app.
+ * We use a fetch-based client that reads the token from localStorage
+ * on every request, so there's no global header to set here.
+ */
+export function setSession(token, user) {
+  if (!token) return;
 
-  if (data?.token) {
-    localStorage.setItem("authToken", data.token);
-    emitAuthChanged(); // notify app immediately
+  localStorage.setItem("authToken", token);
+  if (user) {
+    localStorage.setItem("user", JSON.stringify(user));
   }
-  return data;
+
+  // If your project ALSO loads axios elsewhere, set it safely (optional).
+  try {
+    if (window?.axios) {
+      window.axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    }
+  } catch {
+    /* no-op */
+  }
+
+  emitAuthChanged();
 }
 
-export function logout() {
+export function clearSession() {
   localStorage.removeItem("authToken");
-  emitAuthChanged(); // notify app immediately
+  localStorage.removeItem("user");
+  emitAuthChanged();
+}
+
+export function getToken() {
+  return localStorage.getItem("authToken");
+}
+
+export function getUser() {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
 }
 
 export const getMe = () => api.get("/me");
