@@ -138,3 +138,25 @@ def get_user(user_id):
         if not row:
             return jsonify({"error": {"code": "NOT_FOUND", "message": "User not found"}}), 404
     return jsonify(row)
+
+@users_bp.get("/stats")
+def get_user_stats():
+    sql_total = "SELECT COUNT(*) AS total FROM users"
+    sql_recent = """
+        SELECT id, name, email, role, is_active, created_at
+        FROM users
+        ORDER BY created_at DESC
+        LIMIT 5
+    """
+
+    with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql_total)
+        total = cur.fetchone()["total"]
+
+        cur.execute(sql_recent)
+        recent = cur.fetchall()
+
+    return jsonify({
+        "total": total,
+        "recent": recent
+    })
