@@ -124,3 +124,17 @@ def delete_user(user_id):
                 return jsonify({"error": {"code": "NOT_FOUND", "message": "User not found"}}), 404
             conn.commit()
     return ("", 204)
+
+@users_bp.get("/<int:user_id>")
+def get_user(user_id):
+    sql = """
+      SELECT id, email, name, role, is_active, phone, created_at, updated_at
+      FROM users
+      WHERE id = %s
+    """
+    with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": {"code": "NOT_FOUND", "message": "User not found"}}), 404
+    return jsonify(row)
