@@ -106,3 +106,21 @@ def update_user(user_id):
             conn.commit()
 
     return jsonify(row)
+
+@users_bp.delete("/<int:user_id>")
+def delete_user(user_id):
+
+    sql = """
+      UPDATE users
+      SET is_active = FALSE, updated_at = now()
+      WHERE id = %s
+      RETURNING id
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": {"code": "NOT_FOUND", "message": "User not found"}}), 404
+            conn.commit()
+    return ("", 204)

@@ -36,6 +36,12 @@ export default function AdminUsers() {
   const [selected, setSelected] = useState(new Set());
   const allChecked = useMemo(() => data.data.length > 0 && data.data.every(u => selected.has(u.id)), [data, selected]);
 
+  const [showEdit, setShowEdit] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editErr, setEditErr] = useState("");
+  const [editForm, setEditForm] = useState({ id: null, name: "", email: "", role: "agent", phone: "", is_active: true });
+
+
   useEffect(() => {
     let ignore = false;
     setLoading(true); setError("");
@@ -128,6 +134,19 @@ export default function AdminUsers() {
     }
   }
 
+  function openEdit(u) {
+    setEditForm({ id: u.id, name: u.name || "", email: u.email || "", role: u.role || "agent", phone: u.phone || "", is_active: !!u.is_active });
+    setEditErr("");
+    setShowEdit(true);
+  }
+
+  async function apiDeleteUser(id) {
+    const url = new URL(`/api/users/${id}`, API_BASE);
+    const res = await fetch(url.toString(), { method: "DELETE", credentials: "include" });
+    if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+  }
+
+
 
 
   // UI helpers
@@ -136,7 +155,7 @@ export default function AdminUsers() {
   return (
     <div className="min-h-screen bg-[#f9fafb] text-[#111827]">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-emerald-500 text-white shadow">
+      {/* <header className="sticky top-0 z-10 bg-emerald-500 text-white shadow">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 h-16">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-2xl">home</span>
@@ -156,7 +175,7 @@ export default function AdminUsers() {
             <div className="h-10 w-10 rounded-full bg-cover bg-center" style={{ backgroundImage: "url(https://images.unsplash.com/photo-1544006659-f0b21884ce1d?q=80&w=200&auto=format&fit=crop)" }} />
           </div>
         </div>
-      </header>
+      </header> */}
 
       {/* Content */}
       <main className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
@@ -171,10 +190,10 @@ export default function AdminUsers() {
               <span className="material-symbols-outlined text-lg">download</span>
               <span>Export</span>
             </button>
-            <button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold h-10 px-4 flex items-center gap-2">
+            {/* <button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold h-10 px-4 flex items-center gap-2">
               <span className="material-symbols-outlined text-lg">add</span>
               <span>New User</span>
-            </button>
+            </button> */}
           </div>
         </div>
 
@@ -275,15 +294,27 @@ export default function AdminUsers() {
                         {u.is_active ? "Active" : "Inactive"}
                       </button>
                     </td>
-
-
-
                     <td className="px-6 py-4">{fmtDate(u.created_at)}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="inline-flex items-center gap-2">
                         <button className="h-9 px-3 rounded-lg border border-gray-200 hover:bg-gray-50">View</button>
-                        <button className="h-9 px-3 rounded-lg border border-gray-200 hover:bg-gray-50">Edit</button>
-                        <button className="h-9 px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Delete</button>
+                        <button className="h-9 px-3 rounded-lg border border-gray-200 hover:bg-gray-50" onClick={() => openEdit(u)}>Edit</button>
+                        <button
+                          className="h-9 px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+                          onClick={async () => {
+                            if (!window.confirm("Delete/ban this user? They will be set inactive.")) return;
+                            try {
+                              await apiDeleteUser(u.id);
+                              // remove from current page
+                              setData(curr => ({ ...curr, data: curr.data.filter(x => x.id !== u.id), total: Math.max(0, curr.total - 1) }));
+                            } catch (e) {
+                              alert("Failed to delete user");
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+
                       </div>
                     </td>
                   </tr>
@@ -324,6 +355,85 @@ export default function AdminUsers() {
             </div>
           </div>
         </div>
+        {showEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowEdit(false)} />
+            <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold mb-4">Edit User</h3>
+
+              {editErr && <div className="mb-3 text-sm text-red-600">{editErr}</div>}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Name</label>
+                  <input className="w-full h-10 rounded-xl border border-gray-200 px-3"
+                    value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Email</label>
+                  <input className="w-full h-10 rounded-xl border border-gray-200 px-3" disabled
+                    value={editForm.email} />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Role</label>
+                  <select className="w-full h-10 rounded-xl border border-gray-200 px-3"
+                    value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })}>
+                    <option value="admin">Admin</option>
+                    <option value="agent">Agent</option>
+                    <option value="client">Client</option>
+                    <option value="homeowner">homeowner</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Phone</label>
+                  <input className="w-full h-10 rounded-xl border border-gray-200 px-3"
+                    value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" className="h-4 w-4"
+                      checked={editForm.is_active}
+                      onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} />
+                    Active
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button className="h-10 px-4 rounded-xl border border-gray-200 hover:bg-gray-50"
+                  onClick={() => setShowEdit(false)} disabled={editing}>Cancel</button>
+                <button
+                  className="h-10 px-4 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  disabled={editing}
+                  onClick={async () => {
+                    setEditing(true); setEditErr("");
+                    try {
+                      const patch = {
+                        name: editForm.name.trim(),
+                        role: editForm.role,
+                        phone: editForm.phone.trim() || null,
+                        is_active: !!editForm.is_active,
+                      };
+                      const updated = await apiUpdateUser(editForm.id, patch);
+                      // update row locally
+                      setData(curr => ({
+                        ...curr,
+                        data: curr.data.map(x => x.id === updated.id ? updated : x)
+                      }));
+                      setShowEdit(false);
+                    } catch (e) {
+                      setEditErr(e.message || "Failed to update user");
+                    } finally {
+                      setEditing(false);
+                    }
+                  }}
+                >
+                  {editing ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
