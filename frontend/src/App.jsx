@@ -14,10 +14,13 @@ import SignUp from "./components/SignUp";
 import Unauthorized from "./pages/Unauthorized";
 import HomePage from "./pages/HomePage"
 import Nav from "./components/Nav";
-import { AuthProvider } from "./AuthContext"; 
+import { AuthProvider } from "./AuthContext";
 import AdminDashboard from "./pages/AdminDashboard";
 import AllPropertiesPage from "./pages/AllPropertiesPage";
 import PublicPropertyPage from "./pages/PublicPropertyPage";
+import AdminListings from "./pages/AdminListings.jsx";
+import AdminAnnouncements from "./pages/AdminAnnouncements.jsx";
+import AdminAnnouncementNew from "./pages/AdminAnnouncementNew.jsx";
 
 // ==========================
 // Dashboard (User)
@@ -76,93 +79,106 @@ function Dashboard() {
 export default function App() {
     return (
         <BrowserRouter>
-        <AuthProvider>
-            {/* Nav is outside Routes so it always shows */}
-            <Nav />
-            <Routes>
-                {/* Auth routes */}
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/admin/login" element={<AdminLogin />} />
-                <Route path="/properties/all" element={<AllPropertiesPage />} />
-                <Route path="/explore/properties/:id" element={<PublicPropertyPage />} />
+            <AuthProvider>
+                {/* Nav is outside Routes so it always shows */}
+                <Nav />
+                <Routes>
+                    {/* Auth routes */}
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/admin/login" element={<AdminLogin />} />
+                    <Route path="/properties/all" element={<AllPropertiesPage />} />
+                    <Route path="/explore/properties/:id" element={<PublicPropertyPage />} />
 
 
-                {/* Protected routes */}
-                <Route
-                    path="/dashboard"
-                    element={
-                        <RequireAuth>
-                            <Dashboard />
-                        </RequireAuth>
-                    }
-                />
-                <Route
-                    path="/admin/dashboard"
-                    element={
-                        <RequireAdmin>
-                            <AdminDashboard />
-                        </RequireAdmin>
-                    }
-                />
+                    {/* Protected routes */}
+                    <Route
+                        path="/dashboard"
+                        element={
+                            <RequireAuth>
+                                <Dashboard />
+                            </RequireAuth>
+                        }
+                    />
+                    <Route
+                        path="/admin/dashboard"
+                        element={
+                            <RequireAdmin>
+                                <AdminDashboard />
+                            </RequireAdmin>
+                        }
+                    />
 
-                {/* Admin → Manage Users */}
-                <Route
-                    path="/admin/users"
-                    element={
-                        <RequireAdmin>
-                            <AdminUsers />
-                        </RequireAdmin>
-                    }
-                />
+                    {/* Admin → Manage Listings */}
+                    <Route
+                        path="/admin/listings"
+                        element={
+                            <RequireAdmin>
+                                <AdminListings />
+                            </RequireAdmin>
+                        }
+                    />
 
-                {/* Property routes */}
-                <Route
-                    path="/properties"
-                    element={
-                        <RequireAgent>
-                            <PropertiesPage />
-                        </RequireAgent>
-                    }
-                />
+                    {/* Admin → Manage Listings */}
+                    <Route
+                        path="/admin/users"
+                        element={
+                            <RequireAdmin>
+                                <AdminUsers />
+                            </RequireAdmin>
+                        }
+                    />
 
-                <Route
-                    path="/addproperties"
-                    element={
-                        <RequireAgent>
-                            <AddPropertiesPage />
-                        </RequireAgent>
-                    }
-                />
+<Route path="/admin/announcements" element={<AdminAnnouncements />} />
+        <Route path="/admin/announcements/new" element={<AdminAnnouncementNew />} />
 
-                <Route
-                    path="/properties/:id"
-                    element={
-                        <RequireAgent>
-                            <ViewIndividualPropertiesPage />
-                        </RequireAgent>
-                    }
-                />
+                    {/* Property routes */}
+                    <Route
+                        path="/properties"
+                        element={
+                            <RequireAgent>
+                                <PropertiesPage />
+                            </RequireAgent>
+                        }
+                    />
 
-                <Route
-                    path="/properties/edit/:id"
-                    element={
-                        <RequireAgent>
-                            <EditIndividualPropertiesPage />
-                        </RequireAgent>
-                    }
-                />
+                    <Route
+                        path="/addproperties"
+                        element={
+                            <RequireAgent>
+                                <AddPropertiesPage />
+                            </RequireAgent>
+                        }
+                    />
 
-                {/* Unauthorized route */}
-                <Route path="/unauthorized" element={<Unauthorized />} />
+                    <Route
+                        path="/properties/:id"
+                        element={
+                            <RequireAgent>
+                                <ViewIndividualPropertiesPage />
+                            </RequireAgent>
+                        }
+                    />
+
+                    <Route
+                        path="/properties/edit/:id"
+                        element={
+                            <RequireAgent>
+                                <EditIndividualPropertiesPage />
+                            </RequireAgent>
+                        }
+                    />
+
+                    {/* Unauthorized route */}
+                    <Route path="/unauthorized" element={<Unauthorized />} />
 
 
-                {/*Guest routes */}
-                <Route path="/home" element={<HomePage />} />
-                <Route path="/signup" element={<SignUp />} />
+                    {/*Guest routes */}
+                    <Route path="/home" element={<HomePage />} />
+                    <Route path="/signup" element={<SignUp />} />
 
-                {/* Default fallback */}
-                <Route path="*" element={<HomePage />} />
-            </Routes>
+                    {/* Default fallback */}
+                    <Route path="*" element={<HomePage />} />
+                </Routes>
             </AuthProvider>
         </BrowserRouter>
     );

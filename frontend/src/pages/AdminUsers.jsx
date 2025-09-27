@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 /**
  * Drop this file at: frontend/src/pages/AdminUsers.jsx
@@ -149,27 +150,27 @@ export default function AdminUsers() {
     if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
   }
 
-async function apiGetUser(id) {
-  const url = new URL(`/api/users/${id}`, API_BASE);
-  const res = await fetch(url.toString(), { credentials: "include" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-async function openView(u) {
-  setViewOpen(true);
-  setViewLoading(true);
-  setViewUser(null);
-  try {
-    const full = await apiGetUser(u.id);
-    setViewUser(full);
-  } catch (e) {
-    alert("Failed to load user");
-    setViewOpen(false);
-  } finally {
-    setViewLoading(false);
+  async function apiGetUser(id) {
+    const url = new URL(`/api/users/${id}`, API_BASE);
+    const res = await fetch(url.toString(), { credentials: "include" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   }
-}
+
+  async function openView(u) {
+    setViewOpen(true);
+    setViewLoading(true);
+    setViewUser(null);
+    try {
+      const full = await apiGetUser(u.id);
+      setViewUser(full);
+    } catch (e) {
+      alert("Failed to load user");
+      setViewOpen(false);
+    } finally {
+      setViewLoading(false);
+    }
+  }
 
 
   // UI helpers
@@ -378,110 +379,114 @@ async function openView(u) {
             </div>
           </div>
         </div>
-        {viewOpen && (
-  <div className="fixed inset-0 z-50 flex">
-    {/* backdrop */}
-    <div className="absolute inset-0 bg-black/40" onClick={() => setViewOpen(false)} />
-
-    {/* panel */}
-    <aside className="relative ml-auto h-full w-full max-w-md bg-white shadow-2xl border-l border-gray-100">
-      <div className="flex items-center justify-between border-b px-6 py-4">
-        <div>
-          <h3 className="text-xl font-semibold">{viewUser?.name || "User"}</h3>
-          {viewUser && (
-            <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              viewUser.is_active
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                : "bg-red-50 text-red-600 border border-red-200"
-            }`}>
-              {viewUser.is_active ? "Active" : "Inactive"}
-            </span>
-          )}
+        {/* Back to dashboard */}
+        <div className="py-8">
+          <Link to="/admin/dashboard" className="text-emerald-600 hover:underline text-sm">
+            ← Back to admin home page
+          </Link>
         </div>
-        <button
-          className="text-gray-500 hover:text-gray-700 text-xl"
-          onClick={() => setViewOpen(false)}
-        >
-          ✕
-        </button>
-      </div>
+        {viewOpen && (
+          <div className="fixed inset-0 z-50 flex">
+            {/* backdrop */}
+            <div className="absolute inset-0 bg-black/40" onClick={() => setViewOpen(false)} />
 
-      <div className="px-6 py-6">
-        {viewLoading && <div className="text-sm text-gray-500">Loading…</div>}
+            {/* panel */}
+            <aside className="relative ml-auto h-full w-full max-w-md bg-white shadow-2xl border-l border-gray-100">
+              <div className="flex items-center justify-between border-b px-6 py-4">
+                <div>
+                  <h3 className="text-xl font-semibold">{viewUser?.name || "User"}</h3>
+                  {viewUser && (
+                    <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${viewUser.is_active
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-red-50 text-red-600 border border-red-200"
+                      }`}>
+                      {viewUser.is_active ? "Active" : "Inactive"}
+                    </span>
+                  )}
+                </div>
+                <button
+                  className="text-gray-500 hover:text-gray-700 text-xl"
+                  onClick={() => setViewOpen(false)}
+                >
+                  ✕
+                </button>
+              </div>
 
-        {!viewLoading && viewUser && (
-          <div className="space-y-4 text-sm">
-            <div>
-              <div className="text-gray-500 text-xs">Email</div>
-              <div>{viewUser.email}</div>
-            </div>
-            <div>
-              <div className="text-gray-500 text-xs">Role</div>
-              <div className="capitalize">{viewUser.role}</div>
-            </div>
-            <div>
-              <div className="text-gray-500 text-xs">Phone</div>
-              <div>{viewUser.phone || "—"}</div>
-            </div>
-            <div>
-              <div className="text-gray-500 text-xs">Joined</div>
-              <div>{viewUser.created_at ? new Date(viewUser.created_at).toLocaleDateString() : "—"}</div>
-            </div>
-            <div>
-              <div className="text-gray-500 text-xs">Updated</div>
-              <div>{viewUser.updated_at ? new Date(viewUser.updated_at).toLocaleDateString() : "—"}</div>
-            </div>
+              <div className="px-6 py-6">
+                {viewLoading && <div className="text-sm text-gray-500">Loading…</div>}
+
+                {!viewLoading && viewUser && (
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <div className="text-gray-500 text-xs">Email</div>
+                      <div>{viewUser.email}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-xs">Role</div>
+                      <div className="capitalize">{viewUser.role}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-xs">Phone</div>
+                      <div>{viewUser.phone || "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-xs">Joined</div>
+                      <div>{viewUser.created_at ? new Date(viewUser.created_at).toLocaleDateString() : "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-xs">Updated</div>
+                      <div>{viewUser.updated_at ? new Date(viewUser.updated_at).toLocaleDateString() : "—"}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* footer actions */}
+              {!viewLoading && viewUser && (
+                <div className="mt-auto border-t px-6 py-4 flex items-center justify-between">
+                  <button
+                    className={`h-10 px-4 rounded-lg text-sm font-medium ${viewUser.is_active
+                      ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+                      : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                      }`}
+                    onClick={async () => {
+                      try {
+                        await apiUpdateUser(viewUser.id, { is_active: !viewUser.is_active });
+                        setViewUser({ ...viewUser, is_active: !viewUser.is_active });
+                        // also update table
+                        setData(curr => ({
+                          ...curr,
+                          data: curr.data.map(x => x.id === viewUser.id ? { ...x, is_active: !viewUser.is_active } : x)
+                        }));
+                      } catch (e) {
+                        alert("Failed to update status");
+                      }
+                    }}
+                  >
+                    {viewUser.is_active ? "Deactivate" : "Activate"}
+                  </button>
+
+                  <button
+                    className="h-10 px-4 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700"
+                    onClick={async () => {
+                      if (!window.confirm("Delete this user? They will be set inactive.")) return;
+                      try {
+                        await apiDeleteUser(viewUser.id);
+                        // remove from list
+                        setData(curr => ({ ...curr, data: curr.data.filter(x => x.id !== viewUser.id) }));
+                        setViewOpen(false);
+                      } catch {
+                        alert("Failed to delete user");
+                      }
+                    }}
+                  >
+                    Delete User
+                  </button>
+                </div>
+              )}
+            </aside>
           </div>
         )}
-      </div>
-
-      {/* footer actions */}
-      {!viewLoading && viewUser && (
-        <div className="mt-auto border-t px-6 py-4 flex items-center justify-between">
-          <button
-            className={`h-10 px-4 rounded-lg text-sm font-medium ${
-              viewUser.is_active
-                ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
-                : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-            }`}
-            onClick={async () => {
-              try {
-                await apiUpdateUser(viewUser.id, { is_active: !viewUser.is_active });
-                setViewUser({ ...viewUser, is_active: !viewUser.is_active });
-                // also update table
-                setData(curr => ({
-                  ...curr,
-                  data: curr.data.map(x => x.id === viewUser.id ? { ...x, is_active: !viewUser.is_active } : x)
-                }));
-              } catch (e) {
-                alert("Failed to update status");
-              }
-            }}
-          >
-            {viewUser.is_active ? "Deactivate" : "Activate"}
-          </button>
-
-          <button
-            className="h-10 px-4 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700"
-            onClick={async () => {
-              if (!window.confirm("Delete this user? They will be set inactive.")) return;
-              try {
-                await apiDeleteUser(viewUser.id);
-                // remove from list
-                setData(curr => ({ ...curr, data: curr.data.filter(x => x.id !== viewUser.id) }));
-                setViewOpen(false);
-              } catch {
-                alert("Failed to delete user");
-              }
-            }}
-          >
-            Delete User
-          </button>
-        </div>
-      )}
-    </aside>
-  </div>
-)}
 
 
         {showEdit && (

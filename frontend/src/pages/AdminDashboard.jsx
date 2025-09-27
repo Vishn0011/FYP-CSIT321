@@ -106,8 +106,8 @@ export default function AdminDashboard() {
                 </thead>
                 <tbody>
                   <tr className="border-b hover:bg-gray-50">
-                    <td className="p-3">Sunnyvale Family Home</td>
-                    <td className="p-3 text-gray-500">Elena Rodriguez</td>
+                    <td className="p-3">Bukit Timah Terrace Home</td>
+                    <td className="p-3 text-gray-500">Tan Wei Ling</td>
                     <td className="p-3">
                       <span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">
                         Active
@@ -115,8 +115,8 @@ export default function AdminDashboard() {
                     </td>
                   </tr>
                   <tr className="border-b hover:bg-gray-50">
-                    <td className="p-3">Downtown Loft with View</td>
-                    <td className="p-3 text-gray-500">Ben Carter</td>
+                    <td className="p-3">Punggol 4-Room HDB (Sea View)</td>
+                    <td className="p-3 text-gray-500">Muhd Firdaus</td>
                     <td className="p-3">
                       <span className="px-2 py-1 text-xs font-semibold text-yellow-800 bg-yellow-100 rounded-full">
                         Pending
@@ -197,3 +197,48 @@ function Section({ title, onViewAll, children }) {
     </div>
   );
 }
+
+import { Link } from "react-router-dom";
+
+function AnnouncementsWidget() {
+  return (
+    <section className="rounded-lg bg-white p-6 shadow">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">Announcements</h2>
+        <div className="flex items-center gap-3">
+          <Link to="/admin/announcements/new" className="text-sm font-medium text-emerald-600 hover:underline">Create</Link>
+          <Link to="/admin/announcements" className="text-sm font-medium text-emerald-600 hover:underline">View all</Link>
+        </div>
+      </div>
+
+      <table className="w-full text-left text-sm">
+        <thead className="text-gray-500">
+          <tr>
+            <th className="py-2">Title</th>
+            <th className="py-2">Visibility</th>
+            <th className="py-2">Date</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          <tr>
+            <td className="py-3 font-medium text-gray-900">Scheduled Maintenance – RDS (11pm–1am)</td>
+            <td className="py-3">
+              <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">Agents Only</span>
+            </td>
+            <td className="py-3">Sep 28, 2025</td>
+          </tr>
+          <tr>
+            <td className="py-3 font-medium text-gray-900">New Feature: Manage Listings (Beta)</td>
+            <td className="py-3">
+              <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">Public</span>
+            </td>
+            <td className="py-3">Sep 18, 2025</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+// then inside your AdminDashboard component JSX, drop <AnnouncementsWidget /> where you want it.
+
