@@ -1,8 +1,8 @@
-import os
+import os, re
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
-from db import query_all, execute, get_cursor
+from db import query_all, execute, get_cursor, get_conn
 from auth import make_token, expires_at, auth_required, create_session
 from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
 import json
@@ -329,6 +329,40 @@ def approve_property(prop_id):
 
     return jsonify({"message": "Property approved", "property": dict(row)})
 
+#---User Registration---
+@app.post("/api/register_user")
+def register_user():
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    email = (body.get("email") or "").strip().lower()
+    phone = (body.get("phone") or "").strip()
+    role = (body.get("role") or "").strip().lower()
+    password = body.get("password") or ""
+
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users
+                  (email, password_hash, name, role, phone)
+                VALUES (%s, crypt(%s, gen_salt('bf')), %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+                RETURNING id;
+                """,
+                (email, password, name, role, phone),
+            )
+            row = cur.fetchone()
+
+        if not row:
+            return jsonify({"ok": False, "error": "Email already exists"}), 409
+
+        new_id = row["id"] if isinstance(row, dict) else row[0]
+        return jsonify({"ok": True, "id": new_id}), 201
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))

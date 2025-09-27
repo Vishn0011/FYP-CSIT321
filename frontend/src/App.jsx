@@ -10,6 +10,7 @@ import ViewIndividualPropertiesPage from "./components/ViewIndividualProperties"
 import EditIndividualPropertiesPage from "./components/UpdateProperties";
 import AdminUsers from "./pages/AdminUsers";
 import "./index.css";
+import SignUp from "./components/SignUp";
 import Unauthorized from "./pages/Unauthorized";
 import HomePage from "./pages/HomePage"
 import Nav from "./components/Nav";
@@ -154,6 +155,10 @@ export default function App() {
                 {/* Unauthorized route */}
                 <Route path="/unauthorized" element={<Unauthorized />} />
 
+
+                {/*Guest routes */}
+                <Route path="/home" element={<HomePage />} />
+                <Route path="/signup" element={<SignUp />} />
 
                 {/* Default fallback */}
                 <Route path="*" element={<HomePage />} />
