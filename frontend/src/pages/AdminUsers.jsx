@@ -1,0 +1,574 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+
+/**
+ * Drop this file at: frontend/src/pages/AdminUsers.jsx
+ * Prereq:
+ *   - Tailwind already set up (your HTML used Tailwind)
+ *   - .env.local → VITE_API_URL=http://localhost:8000
+ * Route:
+ *   - In App.jsx add: <Route path="/admin/users" element={<AdminUsers/>} />
+ */
+
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+;
+
+
+export default function AdminUsers() {
+  // ---------- URL/State ----------
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  // Controls visible in the UI (search/filters exist visually; server wiring will come in Step 2)
+  const [query, setQuery] = useState("");
+  const [role, setRole] = useState("all"); // admin|agent|homeowner|all
+  const [status, setStatus] = useState("all"); // active|inactive|all
+
+  // sorting
+  const [sort, setSort] = useState("created_at");
+  const [order, setOrder] = useState("desc")
+
+  // ---------- Data ----------
+  const [data, setData] = useState({ data: [], page: 1, page_size: 20, total: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // Selection (for future bulk actions)
+  const [selected, setSelected] = useState(new Set());
+  const allChecked = useMemo(() => data.data.length > 0 && data.data.every(u => selected.has(u.id)), [data, selected]);
+
+  const [showEdit, setShowEdit] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editErr, setEditErr] = useState("");
+  const [editForm, setEditForm] = useState({ id: null, name: "", email: "", role: "agent", phone: "", is_active: true });
+
+  const [viewOpen, setViewOpen] = useState(false);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [viewUser, setViewUser] = useState(null);
+
+  useEffect(() => {
+    let ignore = false;
+    setLoading(true); setError("");
+
+    const url = new URL("/api/users", API_BASE);
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("page_size", String(pageSize));
+    if (query.trim()) url.searchParams.set("query", query.trim());
+    if (role !== "all") url.searchParams.set("role", role);
+    if (status !== "all") url.searchParams.set("status", status);
+    url.searchParams.set("sort", sort);
+    url.searchParams.set("order", order);
+
+    fetch(url.toString(), { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!ignore) setData(json);
+      })
+      .catch((e) => !ignore && setError(e.message))
+      .finally(() => !ignore && setLoading(false));
+
+    return () => { ignore = true; };
+  }, [page, pageSize, query, role, status, sort, order]);
+
+  const totalPages = Math.max(1, Math.ceil((data?.total || 0) / (data?.page_size || pageSize)));
+
+  function toggleOne(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleAll() {
+    if (allChecked) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(data.data.map(u => u.id)));
+    }
+  }
+
+  function sortBy(col) {
+    if (sort === col) {
+      setOrder(prev => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSort(col);
+      setOrder("asc");
+    }
+    setPage(1);
+  }
+
+  const caret = (col) => (
+    <span className="ml-1 text-gray-400">
+      {sort === col ? (order === "asc" ? "▲" : "▼") : "↕"}
+    </span>
+  );
+
+  async function apiUpdateUser(id, patch) {
+    const url = new URL(`/api/users/${id}`, API_BASE);
+    const res = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async function toggleActive(u) {
+    try {
+      setData(curr => ({
+        ...curr,
+        data: curr.data.map(x =>
+          x.id === u.id ? { ...x, is_active: !u.is_active } : x
+        ),
+      }));
+      await apiUpdateUser(u.id, { is_active: !u.is_active });
+    } catch (e) {
+      // rollback on fail
+      setData(curr => ({
+        ...curr,
+        data: curr.data.map(x =>
+          x.id === u.id ? { ...x, is_active: u.is_active } : x
+        ),
+      }));
+      console.error(e);
+      alert("Failed to update status");
+    }
+  }
+
+  function openEdit(u) {
+    setEditForm({ id: u.id, name: u.name || "", email: u.email || "", role: u.role || "agent", phone: u.phone || "", is_active: !!u.is_active });
+    setEditErr("");
+    setShowEdit(true);
+  }
+
+  async function apiDeleteUser(id) {
+    const url = new URL(`/api/users/${id}`, API_BASE);
+    const res = await fetch(url.toString(), { method: "DELETE", credentials: "include" });
+    if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+  }
+
+  async function apiGetUser(id) {
+    const url = new URL(`/api/users/${id}`, API_BASE);
+    const res = await fetch(url.toString(), { credentials: "include" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async function openView(u) {
+    setViewOpen(true);
+    setViewLoading(true);
+    setViewUser(null);
+    try {
+      const full = await apiGetUser(u.id);
+      setViewUser(full);
+    } catch (e) {
+      alert("Failed to load user");
+      setViewOpen(false);
+    } finally {
+      setViewLoading(false);
+    }
+  }
+
+
+  // UI helpers
+  const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
+
+  return (
+    <div className="min-h-screen bg-[#f9fafb] text-[#111827]">
+      {/* Header */}
+      {/* <header className="sticky top-0 z-10 bg-emerald-500 text-white shadow">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 h-16">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-2xl">home</span>
+            <h1 className="text-xl font-bold">AgentPro</h1>
+          </div>
+          <nav className="hidden md:flex items-center gap-6">
+            <a className="text-sm font-medium text-white hover:opacity-90" href="#">Dashboard</a>
+            <a className="text-sm font-medium text-white hover:opacity-90" href="#">Users</a>
+            <a className="text-sm font-medium text-white hover:opacity-70" href="#">Listings</a>
+            <a className="text-sm font-medium text-white hover:opacity-70" href="#">Announcements</a>
+          </nav>
+          <div className="flex items-center gap-4">
+            <button className="bg-white/10 hover:bg-white/20 border border-white/30 text-white rounded-xl font-semibold flex items-center gap-2 h-10 px-4">
+              <span className="material-symbols-outlined text-lg">add</span>
+              <span>New User</span>
+            </button>
+            <div className="h-10 w-10 rounded-full bg-cover bg-center" style={{ backgroundImage: "url(https://images.unsplash.com/photo-1544006659-f0b21884ce1d?q=80&w=200&auto=format&fit=crop)" }} />
+          </div>
+        </div>
+      </header> */}
+
+      {/* Content */}
+      <main className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+        {/* Title + Actions Row */}
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold">Manage Users</h2>
+            <p className="text-sm text-gray-500">List, search, filter, and manage user accounts.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="bg-white hover:bg-gray-50 border border-emerald-700 text-emerald-700 rounded-xl font-semibold h-10 px-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">download</span>
+              <span>Export</span>
+            </button>
+            {/* <button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold h-10 px-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">add</span>
+              <span>New User</span>
+            </button> */}
+          </div>
+        </div>
+
+        {/* Toolbar: Search & Filters (visual only for now) */}
+        <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="relative">
+            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
+            <input
+              className="w-full pl-10 pr-3 h-10 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="Search by name or email (coming in Step 2)"
+              value={query}
+              onChange={e => { setQuery(e.target.value); setPage(1); }}
+            />
+          </div>
+          <select value={role} onChange={e => { setRole(e.target.value); setPage(1); }}>
+            <option value="all">All roles</option>
+            <option value="admin">Admin</option>
+            <option value="agent">Agent</option>
+            <option value="homeowner">homeowner</option>
+          </select>
+          <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}>
+            <option value="all">All status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <div className="flex items-center gap-2">
+            <button
+              className="h-10 px-4 rounded-xl border border-gray-200 hover:bg-gray-50"
+              onClick={() => {
+                setQuery("");
+                setRole("all");
+                setStatus("all");
+                setSort("created_at");
+                setOrder("desc");
+                setPage(1);
+                setPageSize(20);
+              }}
+            >
+              Reset
+            </button>
+
+          </div>
+        </div>
+
+        {/* Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left text-gray-700">
+              <thead className="bg-gray-50 text-xs text-gray-600 uppercase">
+                <tr>
+                  <th className="p-4">
+                    <input type="checkbox" className="h-4 w-4 rounded border-gray-300"
+                      checked={allChecked} onChange={toggleAll} />
+                  </th>
+                  <th className="px-6 py-3 cursor-pointer select-none" onClick={() => sortBy("name")}>
+                    Name {caret("name")}
+                  </th>
+                  <th className="px-6 py-3 cursor-pointer select-none" onClick={() => sortBy("email")}>
+                    Email {caret("email")}
+                  </th>
+                  <th className="px-6 py-3 cursor-pointer select-none" onClick={() => sortBy("role")}>
+                    Role {caret("role")}
+                  </th>
+                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3 cursor-pointer select-none" onClick={() => sortBy("created_at")}>
+                    Created {caret("created_at")}
+                  </th>
+                  <th className="px-6 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {loading && (
+                  <tr><td className="px-6 py-6" colSpan={7}>Loading…</td></tr>
+                )}
+                {!loading && error && (
+                  <tr><td className="px-6 py-6 text-red-600" colSpan={7}>Error: {error}</td></tr>
+                )}
+                {!loading && !error && data.data.length === 0 && (
+                  <tr><td className="px-6 py-6 text-gray-500" colSpan={7}>No users found.</td></tr>
+                )}
+                {!loading && !error && data.data.map((u) => (
+                  <tr key={u.id} className="bg-white border-t hover:bg-gray-50">
+                    <td className="p-4"><input type="checkbox" className="h-4 w-4 rounded border-gray-300" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)} /></td>
+                    <td className="px-6 py-4 font-medium text-gray-900">{u.name || "—"}</td>
+                    <td className="px-6 py-4">{u.email}</td>
+                    <td className="px-6 py-4 capitalize">{u.role || "—"}</td>
+                    <td className="px-6 py-4">
+                      <button
+                        type="button"
+                        onClick={() => toggleActive(u)}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold
+                          ${u.is_active
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                            : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"}`}
+                        title={u.is_active ? "Click to deactivate" : "Click to activate"}>
+                        {u.is_active ? "Active" : "Inactive"}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4">{fmtDate(u.created_at)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <button className="h-9 px-3 rounded-lg border border-gray-200 hover:bg-gray-50" onClick={() => openView(u)}>View</button>
+                        <button className="h-9 px-3 rounded-lg border border-gray-200 hover:bg-gray-50" onClick={() => openEdit(u)}>Edit</button>
+                        <button
+                          className="h-9 px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+                          onClick={async () => {
+                            if (!window.confirm("Delete/ban this user? They will be set inactive.")) return;
+                            try {
+                              await apiDeleteUser(u.id);
+                              // remove from current page
+                              setData(curr => ({ ...curr, data: curr.data.filter(x => x.id !== u.id), total: Math.max(0, curr.total - 1) }));
+                            } catch (e) {
+                              alert("Failed to delete user");
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer: pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t bg-white">
+            <div className="text-sm text-gray-500">
+              Showing <span className="font-medium">{Math.min((page - 1) * pageSize + 1, data.total)}</span>–
+              <span className="font-medium">{Math.min(page * pageSize, data.total)}</span> of <span className="font-medium">{data.total}</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <select
+                className="h-9 rounded-lg border border-gray-200 px-2"
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              >
+                {[10, 20, 50, 100].map(s => <option key={s} value={s}>{s} / page</option>)}
+              </select>
+
+              <div className="flex items-center gap-2">
+                <button
+                  className="h-9 px-3 rounded-lg border border-gray-200 disabled:opacity-50"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >Prev</button>
+                <span className="text-sm">Page {page} / {totalPages}</span>
+                <button
+                  className="h-9 px-3 rounded-lg border border-gray-200 disabled:opacity-50"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Back to dashboard */}
+        <div className="py-8">
+          <Link to="/admin/dashboard" className="text-emerald-600 hover:underline text-sm">
+            ← Back to admin home page
+          </Link>
+        </div>
+        {viewOpen && (
+          <div className="fixed inset-0 z-50 flex">
+            {/* backdrop */}
+            <div className="absolute inset-0 bg-black/40" onClick={() => setViewOpen(false)} />
+
+            {/* panel */}
+            <aside className="relative ml-auto h-full w-full max-w-md bg-white shadow-2xl border-l border-gray-100">
+              <div className="flex items-center justify-between border-b px-6 py-4">
+                <div>
+                  <h3 className="text-xl font-semibold">{viewUser?.name || "User"}</h3>
+                  {viewUser && (
+                    <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${viewUser.is_active
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-red-50 text-red-600 border border-red-200"
+                      }`}>
+                      {viewUser.is_active ? "Active" : "Inactive"}
+                    </span>
+                  )}
+                </div>
+                <button
+                  className="text-gray-500 hover:text-gray-700 text-xl"
+                  onClick={() => setViewOpen(false)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="px-6 py-6">
+                {viewLoading && <div className="text-sm text-gray-500">Loading…</div>}
+
+                {!viewLoading && viewUser && (
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <div className="text-gray-500 text-xs">Email</div>
+                      <div>{viewUser.email}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-xs">Role</div>
+                      <div className="capitalize">{viewUser.role}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-xs">Phone</div>
+                      <div>{viewUser.phone || "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-xs">Joined</div>
+                      <div>{viewUser.created_at ? new Date(viewUser.created_at).toLocaleDateString() : "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500 text-xs">Updated</div>
+                      <div>{viewUser.updated_at ? new Date(viewUser.updated_at).toLocaleDateString() : "—"}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* footer actions */}
+              {!viewLoading && viewUser && (
+                <div className="mt-auto border-t px-6 py-4 flex items-center justify-between">
+                  <button
+                    className={`h-10 px-4 rounded-lg text-sm font-medium ${viewUser.is_active
+                      ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+                      : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                      }`}
+                    onClick={async () => {
+                      try {
+                        await apiUpdateUser(viewUser.id, { is_active: !viewUser.is_active });
+                        setViewUser({ ...viewUser, is_active: !viewUser.is_active });
+                        // also update table
+                        setData(curr => ({
+                          ...curr,
+                          data: curr.data.map(x => x.id === viewUser.id ? { ...x, is_active: !viewUser.is_active } : x)
+                        }));
+                      } catch (e) {
+                        alert("Failed to update status");
+                      }
+                    }}
+                  >
+                    {viewUser.is_active ? "Deactivate" : "Activate"}
+                  </button>
+
+                  <button
+                    className="h-10 px-4 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700"
+                    onClick={async () => {
+                      if (!window.confirm("Delete this user? They will be set inactive.")) return;
+                      try {
+                        await apiDeleteUser(viewUser.id);
+                        // remove from list
+                        setData(curr => ({ ...curr, data: curr.data.filter(x => x.id !== viewUser.id) }));
+                        setViewOpen(false);
+                      } catch {
+                        alert("Failed to delete user");
+                      }
+                    }}
+                  >
+                    Delete User
+                  </button>
+                </div>
+              )}
+            </aside>
+          </div>
+        )}
+
+
+        {showEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowEdit(false)} />
+            <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold mb-4">Edit User</h3>
+
+              {editErr && <div className="mb-3 text-sm text-red-600">{editErr}</div>}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Name</label>
+                  <input className="w-full h-10 rounded-xl border border-gray-200 px-3"
+                    value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Email</label>
+                  <input className="w-full h-10 rounded-xl border border-gray-200 px-3" disabled
+                    value={editForm.email} />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Role</label>
+                  <select className="w-full h-10 rounded-xl border border-gray-200 px-3"
+                    value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })}>
+                    <option value="admin">Admin</option>
+                    <option value="agent">Agent</option>
+                    <option value="client">Client</option>
+                    <option value="homeowner">homeowner</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Phone</label>
+                  <input className="w-full h-10 rounded-xl border border-gray-200 px-3"
+                    value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" className="h-4 w-4"
+                      checked={editForm.is_active}
+                      onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} />
+                    Active
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button className="h-10 px-4 rounded-xl border border-gray-200 hover:bg-gray-50"
+                  onClick={() => setShowEdit(false)} disabled={editing}>Cancel</button>
+                <button
+                  className="h-10 px-4 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  disabled={editing}
+                  onClick={async () => {
+                    setEditing(true); setEditErr("");
+                    try {
+                      const patch = {
+                        name: editForm.name.trim(),
+                        role: editForm.role,
+                        phone: editForm.phone.trim() || null,
+                        is_active: !!editForm.is_active,
+                      };
+                      const updated = await apiUpdateUser(editForm.id, patch);
+                      // update row locally
+                      setData(curr => ({
+                        ...curr,
+                        data: curr.data.map(x => x.id === updated.id ? updated : x)
+                      }));
+                      setShowEdit(false);
+                    } catch (e) {
+                      setEditErr(e.message || "Failed to update user");
+                    } finally {
+                      setEditing(false);
+                    }
+                  }}
+                >
+                  {editing ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
