@@ -1,6 +1,6 @@
 // src/SignUp.jsx
 import React, { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -31,6 +31,8 @@ export default function SignUp() {
     const { name, type, checked, value } = e.target;
     setForm((s) => ({ ...s, [name]: type === "checkbox" ? checked : value }));
   };
+
+  const navigate = useNavigate();
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -76,7 +78,7 @@ export default function SignUp() {
         return;
       }
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
-      setSuccess("Sign up successful! You can now log in.");
+      navigate("/payment", { state: { role, email: form.email.trim() } });
     } catch (err) {
       setError(err.message || "Sign up failed.");
     } finally {
@@ -92,29 +94,27 @@ export default function SignUp() {
             <div className="text-center mb-8">
               <h1 className="text-3xl font-bold text-gray-900">Create your account</h1>
             </div>
-            
+
             {/* Role selector*/}
             <div className="mb-6">
               <div className="flex bg-gray-100 rounded-lg p-1">
                 <button
                   type="button"
                   onClick={() => updateRole("agent")}
-                  className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition ${
-                    role === "agent"
+                  className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition ${role === "agent"
                       ? "bg-white shadow text-gray-700"
                       : "text-gray-500"
-                  }`}
+                    }`}
                 >
                   Property Agent
                 </button>
                 <button
                   type="button"
                   onClick={() => updateRole("homeowner")}
-                  className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition ${
-                    role === "homeowner"
+                  className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition ${role === "homeowner"
                       ? "bg-white shadow text-gray-700"
                       : "text-gray-500"
-                  }`}
+                    }`}
                 >
                   Homeowner
                 </button>
@@ -124,7 +124,7 @@ export default function SignUp() {
             <form onSubmit={onSubmit} className="space-y-6">
               {/* Keep role as a real form field for submission */}
               <input type="hidden" name="role" value={role} />
-              
+
               {/* Name */}
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700">Name</label>
@@ -136,11 +136,10 @@ export default function SignUp() {
                     onChange={onChange}
                     required
                     aria-invalid={!!fieldErrors.name}
-                    className={`w-full px-3 py-2 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${
-                      fieldErrors.name
+                    className={`w-full px-3 py-2 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${fieldErrors.name
                         ? "border border-red-500 focus:ring-red-600 focus:border-red-600"
                         : "border border-gray-300 focus:ring-emerald-700 focus:border-emerald-700"
-                    }`}
+                      }`}
                     placeholder="Your full name"
                   />
                 </div>
@@ -161,11 +160,10 @@ export default function SignUp() {
                     onChange={onChange}
                     required
                     aria-invalid={!!fieldErrors.email}
-                    className={`w-full px-3 py-2 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${
-                      fieldErrors.email
+                    className={`w-full px-3 py-2 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${fieldErrors.email
                         ? "border border-red-500 focus:ring-red-600 focus:border-red-600"
                         : "border border-gray-300 focus:ring-emerald-700 focus:border-emerald-700"
-                    }`}
+                      }`}
                     placeholder="you@example.com"
                     autoComplete="email"
                   />
@@ -187,11 +185,10 @@ export default function SignUp() {
                     onChange={onChange}
                     required
                     aria-invalid={!!fieldErrors.phone}
-                    className={`w-full px-3 py-2 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${
-                      fieldErrors.phone
+                    className={`w-full px-3 py-2 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${fieldErrors.phone
                         ? "border border-red-500 focus:ring-red-600 focus:border-red-600"
                         : "border border-gray-300 focus:ring-emerald-700 focus:border-emerald-700"
-                    }`}
+                      }`}
                     placeholder="+65 91234567"
                     autoComplete="tel"
                   />
@@ -214,11 +211,10 @@ export default function SignUp() {
                     required
                     minLength={8}
                     aria-invalid={!!fieldErrors.password}
-                    className={`w-full px-3 py-2 pr-12 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${
-                      fieldErrors.password
+                    className={`w-full px-3 py-2 pr-12 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${fieldErrors.password
                         ? "border border-red-500 focus:ring-red-600 focus:border-red-600"
                         : "border border-gray-300 focus:ring-emerald-700 focus:border-emerald-700"
-                    }`}
+                      }`}
                     placeholder="••••••••"
                     autoComplete="new-password"
                   />
@@ -250,11 +246,10 @@ export default function SignUp() {
                     required
                     minLength={8}
                     aria-invalid={!!fieldErrors.confirmPassword}
-                    className={`w-full px-3 py-2 pr-12 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${
-                      fieldErrors.confirmPassword
+                    className={`w-full px-3 py-2 pr-12 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 ${fieldErrors.confirmPassword
                         ? "border border-red-500 focus:ring-red-600 focus:border-red-600"
                         : "border border-gray-300 focus:ring-emerald-700 focus:border-emerald-700"
-                    }`}
+                      }`}
                     placeholder="••••••••"
                     autoComplete="new-password"
                   />

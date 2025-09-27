@@ -21,6 +21,7 @@ import PublicPropertyPage from "./pages/PublicPropertyPage";
 import AdminListings from "./pages/AdminListings.jsx";
 import AdminAnnouncements from "./pages/AdminAnnouncements.jsx";
 import AdminAnnouncementNew from "./pages/AdminAnnouncementNew.jsx";
+import Payment from "./pages/Payment";
 
 // ==========================
 // Dashboard (User)
@@ -128,8 +129,20 @@ export default function App() {
                         }
                     />
 
-<Route path="/admin/announcements" element={<AdminAnnouncements />} />
-        <Route path="/admin/announcements/new" element={<AdminAnnouncementNew />} />
+                    <Route
+                        path="/admin/announcements"
+                        element={
+                            <RequireAgent>
+                                <AdminAnnouncements />
+                            </RequireAgent>}
+                    />
+                    <Route
+                        path="/admin/announcements/new"
+                        element={
+                            <RequireAgent>
+                                <AdminAnnouncementNew />
+                            </RequireAgent>
+                        } />
 
                     {/* Property routes */}
                     <Route
@@ -168,6 +181,7 @@ export default function App() {
                         }
                     />
 
+
                     {/* Unauthorized route */}
                     <Route path="/unauthorized" element={<Unauthorized />} />
 
@@ -175,7 +189,7 @@ export default function App() {
                     {/*Guest routes */}
                     <Route path="/home" element={<HomePage />} />
                     <Route path="/signup" element={<SignUp />} />
-
+                    + <Route path="/payment" element={<Payment />} />
                     {/* Default fallback */}
                     <Route path="*" element={<HomePage />} />
                 </Routes>
