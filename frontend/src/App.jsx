@@ -108,6 +108,8 @@ export default function App() {
                             <RequireHomebuyer>
                                 <HomebuyerSearch />
                             </RequireHomebuyer>
+                        }
+                    />
 
                     {/* Protected routes */}
                     <Route
