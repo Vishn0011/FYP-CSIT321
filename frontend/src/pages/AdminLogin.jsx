@@ -27,7 +27,7 @@ export default function AdminLogin() {
 
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
-      nav("/admin"); // send admins to their dashboard route
+      nav("/admin/dashboard");
     } catch (e) {
       setErr(e.message || "Login failed");
     } finally {
