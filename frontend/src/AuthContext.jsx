@@ -1,7 +1,6 @@
 // src/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from "react";
 
-
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
@@ -9,13 +8,26 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         const storedUser = localStorage.getItem("user");
-        if (storedUser) setUser(JSON.parse(storedUser));
+        if (storedUser && storedUser !== "undefined" && storedUser !== "null") {
+            try {
+                setUser(JSON.parse(storedUser));
+            } catch (err) {
+                console.error("Invalid user in localStorage:", storedUser, err);
+                localStorage.removeItem("user");
+            }
+        }
     }, []);
 
     const login = (user, token) => {
-        localStorage.setItem("user", JSON.stringify(user));
-        localStorage.setItem("token", token);
-        setUser(user); // trigger rerender
+        if (user) {
+            localStorage.setItem("user", JSON.stringify(user));
+            setUser(user);
+        }
+        if (token) {
+            localStorage.setItem("token", token);
+        } else {
+            localStorage.removeItem("token"); // don’t store "undefined"
+        }
     };
 
     const logout = () => {

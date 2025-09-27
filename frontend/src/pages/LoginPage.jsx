@@ -40,7 +40,7 @@ export default function LoginPage() {
             if (data.user.role === "agent") {
                 nav("/properties");
             } else if (data.user.role === "homeowner") {
-                nav("/dashboard");
+                nav("/homeowner/search");
             } else {
                 nav("/");
             }

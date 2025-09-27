@@ -1,18 +1,39 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "../api";
 
 export default function PublicPropertyPage() {
     const { id } = useParams();
+    const navigate = useNavigate();
     const [property, setProperty] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
 
     useEffect(() => {
+        // Check if user is logged in (from localStorage)
+        const storedUser = localStorage.getItem("user");
+        if (storedUser) {
+            setIsLoggedIn(true);
+        } else {
+            setIsLoggedIn(false);
+            navigate("/login"); // redirect if not logged in
+            return;
+        }
+
+        // Only fetch property if logged in
         api.get(`/properties/${id}`)
             .then((res) => setProperty(res.data))
             .catch(() => setProperty(null))
             .finally(() => setLoading(false));
-    }, [id]);
+    }, [id, navigate]);
+
+    if (!isLoggedIn) {
+        return (
+            <div className="p-6 text-center">
+                Please <Link to="/login" className="text-blue-600">login</Link> to view this property.
+            </div>
+        );
+    }
 
     if (loading) return <div className="p-6 text-center">Loading property...</div>;
     if (!property) return <div className="p-6 text-center">Property not found</div>;
@@ -50,9 +71,6 @@ export default function PublicPropertyPage() {
 
             {/* Locked AI Insights Section */}
             <div className="mt-10 bg-gray-50 border rounded-lg p-6 text-center">
-                <div className="flex justify-center mb-4">
-                    <span className="text-purple-600 text-4xl"></span>
-                </div>
                 <h2 className="text-xl font-semibold mb-2">AI Insights Available</h2>
                 <p className="text-gray-600 mb-4">
                     Get advanced AI price predictions, market analysis, and investment insights.

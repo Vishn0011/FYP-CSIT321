@@ -327,7 +327,7 @@ def approve_property(prop_id):
 
     return jsonify({"message": "Property approved", "property": dict(row)})
 
-#---User Registration---
+# ---User Registration---
 @app.post("/api/register_user")
 def register_user():
     body = request.get_json(force=True) or {}
@@ -345,7 +345,7 @@ def register_user():
                   (email, password_hash, name, role, phone)
                 VALUES (%s, crypt(%s, gen_salt('bf')), %s, %s, %s)
                 ON CONFLICT (email) DO NOTHING
-                RETURNING id;
+                RETURNING id, email, name, role, phone;
                 """,
                 (email, password, name, role, phone),
             )
@@ -354,13 +354,69 @@ def register_user():
         if not row:
             return jsonify({"ok": False, "error": "Email already exists"}), 409
 
-        new_id = row["id"] if isinstance(row, dict) else row[0]
-        return jsonify({"ok": True, "id": new_id}), 201
+        # Build user dict from row
+        if isinstance(row, dict):
+            user = row
+        else:
+            user = {
+                "id": row[0],
+                "email": row[1],
+                "name": row[2],
+                "role": row[3],
+                "phone": row[4],
+            }
+
+        # TODO: generate real token here (JWT etc.)
+        return jsonify({"ok": True, "user": user, "token": None}), 201
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
+
+# --- Search properties for homebuyers (protected) ---
+@app.get("/api/homeowner/properties")
+@auth_required
+def homebuyer_properties():
+    q = request.args.get("q", "").strip()
+    location = request.args.get("location", "").strip()
+    min_price = request.args.get("min_price", type=int)
+    max_price = request.args.get("max_price", type=int)
+    bedrooms = request.args.get("bedrooms", type=int)
+
+    query = """
+        SELECT id, title, price, bedrooms, location
+        FROM properties
+        WHERE status = 'Active'
+    """
+    params = []
+
+    if q:
+        query += " AND (title ILIKE %s OR location ILIKE %s)"
+        params += [f"%{q}%", f"%{q}%"]
+
+    if location:
+        query += " AND location = %s"
+        params.append(location)
+
+    if min_price is not None:
+        query += " AND price >= %s"
+        params.append(min_price)
+
+    if max_price is not None:
+        query += " AND price <= %s"
+        params.append(max_price)
+
+    if bedrooms is not None:
+        query += " AND bedrooms = %s"
+        params.append(bedrooms)
+
+    query += " ORDER BY id DESC"
+
+    rows = query_all(query, params)
+    return jsonify({"success": True, "items": rows})
+
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))

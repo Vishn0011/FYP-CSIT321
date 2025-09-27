@@ -17,6 +17,9 @@ import { AuthProvider } from "./AuthContext";
 import AdminDashboard from "./pages/AdminDashboard";
 import AllPropertiesPage from "./pages/AllPropertiesPage";
 import PublicPropertyPage from "./pages/PublicPropertyPage";
+import RequireHomebuyer from "./components/RequireHomebuyer"; // import guard
+import HomebuyerSearch from "./pages/HomebuyerSearch";
+
 
 // ==========================
 // Dashboard (User)
@@ -85,16 +88,6 @@ export default function App() {
                 <Route path="/properties/all" element={<AllPropertiesPage />} />
                 <Route path="/explore/properties/:id" element={<PublicPropertyPage />} />
 
-
-                {/* Protected routes */}
-                <Route
-                    path="/dashboard"
-                    element={
-                        <RequireAuth>
-                            <Dashboard />
-                        </RequireAuth>
-                    }
-                />
                 <Route
                     path="/admin"
                     element={
@@ -102,7 +95,17 @@ export default function App() {
                             <AdminDashboard />
                         </RequireAdmin>
                     }
-                />
+                    />
+
+                    {/* Protected Homebuyer routes */}
+                    <Route
+                        path="/homeowner/search"
+                        element={
+                            <RequireHomebuyer>
+                                <HomebuyerSearch />
+                            </RequireHomebuyer>
+                        }
+                    />
 
                 {/* Property routes */}
                 <Route
@@ -126,9 +129,9 @@ export default function App() {
                 <Route
                     path="/properties/:id"
                     element={
-                        <RequireAgent>
+                        <RequireAuth>
                             <ViewIndividualPropertiesPage />
-                        </RequireAgent>
+                        </RequireAuth>
                     }
                 />
 

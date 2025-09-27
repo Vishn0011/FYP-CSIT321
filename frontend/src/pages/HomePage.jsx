@@ -1,19 +1,32 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Brain, MapPin, Search, Shield, Users, Sparkles, BarChart3, Target } from "lucide-react";
+import {
+    Brain,
+    MapPin,
+    Search,
+    Shield,
+    Users,
+    Sparkles,
+    BarChart3,
+    Target,
+} from "lucide-react";
 import api from "../api"; // axios client
+import { useAuth } from "../AuthContext"; // import AuthContext
+import Chatbot from "../components/Chatbot";
+
 
 export default function HomePage() {
+    const { user } = useAuth(); // check if user is logged in
     const [searchQuery, setSearchQuery] = useState("");
     const [properties, setProperties] = useState([]);
 
     // fetch all properties across all agents
     useEffect(() => {
-        api.get("/properties/all")
+        api
+            .get("/properties/all")
             .then((res) => setProperties(res.data || []))
             .catch((err) => console.error("Failed to load properties", err));
     }, []);
-
 
     const handleSearch = () => {
         console.log("Searching for:", searchQuery);
@@ -23,24 +36,39 @@ export default function HomePage() {
         {
             icon: Brain,
             title: "AI Price Prediction",
-            description: "Our AI analyzes market data to predict future property values with high accuracy.",
+            description:
+                "Our AI analyzes market data to predict future property values with high accuracy.",
         },
         {
             icon: Target,
             title: "Smart Property Matching",
-            description: "AI-powered recommendations that learn your preferences to find your dream home.",
+            description:
+                "AI-powered recommendations that learn your preferences to find your dream home.",
         },
         {
             icon: BarChart3,
             title: "Market Intelligence",
-            description: "Real-time insights into pricing trends, neighborhoods, and investments.",
+            description:
+                "Real-time insights into pricing trends, neighborhoods, and investments.",
         },
     ];
 
     const traditionalFeatures = [
-        { icon: Shield, title: "Verified Listings", description: "All properties are vetted by our experts." },
-        { icon: Users, title: "Trusted Agents", description: "Connect with certified professionals." },
-        { icon: Sparkles, title: "Premium Experience", description: "A seamless, modern home-search journey." },
+        {
+            icon: Shield,
+            title: "Verified Listings",
+            description: "All properties are vetted by our experts.",
+        },
+        {
+            icon: Users,
+            title: "Trusted Agents",
+            description: "Connect with certified professionals.",
+        },
+        {
+            icon: Sparkles,
+            title: "Premium Experience",
+            description: "A seamless, modern home-search journey.",
+        },
     ];
 
     return (
@@ -52,10 +80,12 @@ export default function HomePage() {
                         <Brain className="w-4 h-4 mr-2" /> AI-Powered Real Estate
                     </span>
                     <h1 className="text-5xl font-bold">
-                        Find Your Dream Home with <span className="text-yellow-300">AI Intelligence</span>
+                        Find Your Dream Home with{" "}
+                        <span className="text-yellow-300">AI Intelligence</span>
                     </h1>
                     <p className="text-xl text-emerald-100 max-w-2xl mx-auto">
-                        Explore listings, analyze market trends, and predict property values all in one place.
+                        Explore listings, analyze market trends, and predict property values
+                        all in one place.
                     </p>
 
                     {/* Search bar */}
@@ -106,7 +136,9 @@ export default function HomePage() {
             <section className="py-16 bg-white">
                 <div className="max-w-7xl mx-auto px-6">
                     <div className="flex justify-between items-center mb-8">
-                        <h2 className="text-3xl font-bold text-gray-900">Featured Properties</h2>
+                        <h2 className="text-3xl font-bold text-gray-900">
+                            Featured Properties
+                        </h2>
                         <Link to="/properties/all">
                             <button className="border border-emerald-200 text-emerald-700 px-4 py-2 rounded-lg hover:bg-emerald-50">
                                 View All
@@ -116,7 +148,10 @@ export default function HomePage() {
 
                     <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {properties.slice(0, 4).map((p) => (
-                            <div key={p.id} className="bg-white rounded-xl shadow hover:shadow-lg transition overflow-hidden">
+                            <div
+                                key={p.id}
+                                className="bg-white rounded-xl shadow hover:shadow-lg transition overflow-hidden"
+                            >
                                 {p.photos && p.photos.length > 0 && (
                                     <img
                                         src={JSON.parse(p.photos)[0]} // first photo
@@ -127,7 +162,9 @@ export default function HomePage() {
                                 <div className="p-4">
                                     <h3 className="text-lg font-semibold">{p.title}</h3>
                                     <p className="text-gray-500 text-sm">{p.location}</p>
-                                    <p className="text-emerald-700 font-bold mt-2">SGD {p.price}</p>
+                                    <p className="text-emerald-700 font-bold mt-2">
+                                        SGD {p.price}
+                                    </p>
                                 </div>
                             </div>
                         ))}
@@ -141,7 +178,10 @@ export default function HomePage() {
                     {traditionalFeatures.map((f, i) => {
                         const Icon = f.icon;
                         return (
-                            <div key={i} className="bg-white text-center p-6 rounded-xl shadow hover:shadow-lg transition">
+                            <div
+                                key={i}
+                                className="bg-white text-center p-6 rounded-xl shadow hover:shadow-lg transition"
+                            >
                                 <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <Icon className="w-8 h-8 text-emerald-600" />
                                 </div>
@@ -195,21 +235,37 @@ export default function HomePage() {
                         intelligence
                     </p>
                     <div className="flex justify-center space-x-4">
-                        <Link to="/signup">
+                        <Link
+                            to={
+                                !user
+                                    ? "/signup"
+                                    : user.role === "agent"
+                                        ? "/properties"
+                                        : "/home"
+                            }
+                        >
                             <button className="bg-gradient-to-r from-emerald-600 to-purple-600 hover:from-emerald-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold shadow">
                                 Start AI-Powered Search
                             </button>
                         </Link>
-                        <Link to="/signup">
+
+                        <Link
+                            to={
+                                !user
+                                    ? "/signup"
+                                    : user.role === "agent"
+                                        ? "/properties"
+                                        : "/home"
+                            }
+                        >
                             <button className="border border-emerald-300 text-emerald-700 px-6 py-3 rounded-lg font-semibold hover:bg-emerald-50 transition">
                                 List with AI Insights
                             </button>
                         </Link>
                     </div>
-
                 </div>
             </section>
-
+            <Chatbot />
         </div>
     );
 }

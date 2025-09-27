@@ -2,10 +2,29 @@
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import "./css/ViewIndividualProperties.css";
+import {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+} from "recharts";
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api",
 });
+
+const priceHistory = [
+    { month: "Jan", price: 950000 },
+    { month: "Feb", price: 970000 },
+    { month: "Mar", price: 960000 },
+    { month: "Apr", price: 980000 },
+    { month: "May", price: 995000 },
+    { month: "Jun", price: 1005000 },
+];
+
 
 export default function PropertyDetails() {
     const { id } = useParams();
@@ -89,8 +108,16 @@ export default function PropertyDetails() {
                     <h3>Price History & AI Insights</h3>
 
                     {/* Mock chart placeholder */}
-                    <div className="bg-gray-100 rounded-lg p-6 my-4 text-center text-gray-500">
-                        📈 [Price History Chart Placeholder]
+                    <div className="bg-gray-100 rounded-lg p-6 my-4">
+                        <ResponsiveContainer width="100%" height={300}>
+                            <LineChart data={priceHistory}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="month" />
+                                <YAxis domain={["auto", "auto"]} />
+                                <Tooltip />
+                                <Line type="monotone" dataKey="price" stroke="#4F46E5" strokeWidth={3} dot={{ r: 4 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
                     </div>
 
                     {/* AI Price Prediction */}
