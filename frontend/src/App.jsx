@@ -25,6 +25,7 @@ import AdminAnnouncements from "./pages/AdminAnnouncements.jsx";
 import AdminAnnouncementNew from "./pages/AdminAnnouncementNew.jsx";
 import Payment from "./pages/Payment";
 
+
 // ==========================
 // Dashboard (User)
 // ==========================
@@ -200,7 +201,14 @@ export default function App() {
                             </RequireAgent>
                         }
                     />
-
+                    <Route
+                        path="/properties/:id"
+                        element={
+                            <RequireAdmin>
+                                <ViewIndividualPropertiesPage />
+                            </RequireAdmin>
+                        }
+                    />
                     <Route
                         path="/properties/edit/:id"
                         element={

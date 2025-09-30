@@ -31,6 +31,14 @@ def execute(sql, params=None, return_row=False):
                 return None
         conn.commit()
 
+def query_one(sql, params=None):
+    from app import get_cursor
+    with get_cursor() as cur:
+        cur.execute(sql, params or [])
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 
 # def query_all(sql, params=None):
 #     with get_conn() as conn, conn.cursor() as cur:

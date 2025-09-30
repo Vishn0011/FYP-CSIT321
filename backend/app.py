@@ -31,6 +31,9 @@ def health():
     return jsonify({"status": "ok"})
 
 # Auth: Login, Session token
+from datetime import datetime
+import pytz
+
 @app.post("/auth/login")
 def login():
     body = request.get_json(force=True) or {}
@@ -58,20 +61,32 @@ def login():
         return jsonify({"error": "invalid credentials or role"}), 401
 
     token = make_token()
-    exp = expires_at(SESSION_TTL_MIN)
+    exp = expires_at(SESSION_TTL_MIN)   # still UTC
+
+    # insert into DB in UTC (best practice)
     with get_cursor() as cur:
         cur.execute("""
             INSERT INTO sessions(user_id, token, expires_at)
             VALUES (%s, %s, %s)
         """, [user["id"], token, exp])
 
+    # convert expiry to SG time before sending back
+    sg = pytz.timezone("Asia/Singapore")
+    exp_sg = exp.astimezone(sg)
+
     return jsonify({
         "token": token,
-        "expires_at": exp.isoformat(),
-        "user": {"id": user["id"], "email": user["email"], "name": user.get("name"), "role": user.get("role")}
+        "expires_at": exp_sg.isoformat(),   # send SG time
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "name": user.get("name"),
+            "role": user.get("role")
+        }
     })
 
 #Auth Admin Login
+
 @app.post("/auth/admin/login")
 def admin_login():
     body = request.get_json(force=True, silent=True) or {}
@@ -100,21 +115,24 @@ def admin_login():
     if row["is_active"] is not None and not row["is_active"]:
         return jsonify({"error": "account inactive"}), 403
 
-    # Success ,create session
+    # Success, create session
     user = {
         "id": row["id"],
         "email": row["email"],
         "name": row["name"],
         "role": row["role"],
     }
-    token, exp = create_session(user["id"])
+    token, exp = create_session(user["id"])   # exp is still UTC
+
+    # convert UTC -> Singapore time before sending
+    sg = pytz.timezone("Asia/Singapore")
+    exp_sg = exp.astimezone(sg)
 
     return jsonify({
         "token": token,
-        "expires_at": exp.isoformat(),
+        "expires_at": exp_sg.isoformat(),  # frontend sees SG time
         "user": user
     })
-
 
 
 # --- Who am I (protected) ---
@@ -130,6 +148,31 @@ def logout():
     with get_cursor() as cur:
         cur.execute("DELETE FROM sessions WHERE token = %s", [request.token])
     return jsonify({"ok": True})
+
+# ---------- USERS ----------
+@app.get("/api/users")
+def list_users():
+    rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
+    return jsonify(rows)
+
+@app.get("/api/users/stats")
+def user_stats():
+    total_row = query_all("SELECT COUNT(*) AS count FROM users;")
+    total = total_row[0]["count"] if total_row else 0
+
+    recent = query_all("""
+        SELECT id, email, created_at,name
+        FROM users
+        ORDER BY created_at DESC
+        LIMIT 5;
+    """)
+
+    return jsonify({
+        "total": total,
+        "recent": recent
+    })
+
+
 
 #list features that are active
 @app.get("/api/features")
@@ -168,6 +211,39 @@ def delete_feature(fid):
     execute("DELETE FROM features WHERE id=%s", [fid])
     return jsonify({"deleted": fid})
 
+#show in dashboard recent pending properties for admin
+@app.get("/api/properties/recent")
+def recent_properties():
+    # only show properties needing approval
+    rows = query_all("""
+        SELECT p.id, p.title, u.name AS agent, p.status
+        FROM properties p
+        JOIN users u ON p.agent_id = u.id
+        WHERE p.status = 'Pending'
+        ORDER BY p.created_at DESC
+        LIMIT 10
+    """)
+    return jsonify(rows)
+
+
+#admin approve property
+@app.patch("/api/properties/<int:prop_id>/approve")
+def approve_property(prop_id):
+    with get_cursor() as cur:
+        cur.execute("""
+            UPDATE properties
+            SET status = 'Active'
+            WHERE id = %s
+            RETURNING id, status
+        """, [prop_id])
+        row = cur.fetchone()
+
+    if not row:
+        return jsonify({"error": "Property not found"}), 404
+
+    return jsonify({"message": "Property approved", "property": dict(row)})
+
+
 
 # List all active properties (public marketplace view)
 @app.get("/api/properties/all")
@@ -190,7 +266,9 @@ def list_properties():
 
     query = """
         SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
-               size, location, photos, status, created_at, updated_at
+               size, location, latitude, longitude, photos, status,
+               furnishing, floor_level, tenure, amenities, floor_plan, video_url,
+               created_at, updated_at
         FROM properties
         WHERE 1=1
     """
@@ -204,12 +282,13 @@ def list_properties():
         query += " AND status = %s"
         params.append(status)
 
+    # If you're doing soft delete, add:
+    # query += " AND is_deleted = FALSE"
+
     query += " ORDER BY created_at DESC"
 
     rows = query_all(query, params)
     return jsonify(rows)
-
-
 
 #get individual property by id
 @app.get("/api/properties/<int:prop_id>")
@@ -217,58 +296,91 @@ def get_property(prop_id):
     row = query_all(
         """
         SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
-               size, location, photos, status, created_at, updated_at
+               size, location, latitude, longitude, photos, status,
+               furnishing, floor_level, tenure, amenities, floor_plan, video_url,
+               created_at, updated_at
         FROM properties
         WHERE id = %s
-        """,
-        [prop_id]
+    """,
+        [prop_id],
     )
     if not row:
         return jsonify({"error": "Property not found"}), 404
     return jsonify(row[0])
 
+
 #add property
+# --- Add Property ---
 @app.post("/api/properties")
-@auth_required   # make sure only logged-in users can hit this
+@auth_required
 def add_property():
     data = request.get_json(force=True)
 
-    # get the logged-in user
+    # Only agents can add
     user = get_current_user()
     if not user or user["role"] != "agent":
         return jsonify({"error": "Only agents can add properties"}), 403
 
-    agent_id = user["id"]   # dynamic agent id from session
+    agent_id = user["id"]
 
-    title = data.get("title")
-    ptype = data.get("property_type")
-    price = data.get("price")
-    size = data.get("size")
-    location = data.get("location")
+    # status can be "Draft" or "Pending" (default Pending)
+    status = data.get("status", "Pending")
 
-    if not title or not ptype or not price or not size or not location:
-        return jsonify({"error": "Missing required fields"}), 400
+    # handle arrays: convert photos to JSON, amenities to array
+    photos = None
+    if "photos" in data:
+        photos = data["photos"]
+        if isinstance(photos, list):
+            photos = json.dumps(photos)
 
-    description = data.get("description")
-    bedrooms = data.get("bedrooms", 0)
-    bathrooms = data.get("bathrooms", 0)
-    photos = data.get("photos")
-    status = data.get("status", "Active")
+    amenities = None
+    if "amenities" in data:
+        amenities = data["amenities"]
+        if isinstance(amenities, list):
+            # if DB column is JSON, dump to JSON
+            # if DB column is Postgres ARRAY, pass list directly
+            amenities = amenities  
 
     row = execute(
         """
         INSERT INTO properties
         (agent_id, title, property_type, description, price, bedrooms, bathrooms,
-         size, location, photos, status)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+         size, location, latitude, longitude, photos, status,
+         furnishing, floor_level, tenure, amenities, floor_plan, video_url)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s)
         RETURNING id, agent_id, title, property_type, description, price,
-                  bedrooms, bathrooms, size, location, photos, status, created_at;
+                  bedrooms, bathrooms, size, location, latitude, longitude,
+                  photos, status, furnishing, floor_level, tenure, amenities,
+                  floor_plan, video_url, created_at, updated_at;
         """,
-        [agent_id, title, ptype, description, price, bedrooms, bathrooms,
-         size, location, photos, status],
-        return_row=True
+        [
+            agent_id,
+            data.get("title"),
+            data.get("property_type"),
+            data.get("description"),
+            data.get("price"),
+            data.get("bedrooms"),
+            data.get("bathrooms"),
+            data.get("size"),
+            data.get("location"),
+            data.get("latitude"),
+            data.get("longitude"),
+            photos,
+            status,
+            data.get("furnishing"),
+            data.get("floor_level"),
+            data.get("tenure"),
+            amenities,
+            data.get("floor_plan"),
+            data.get("video_url"),
+        ],
+        return_row=True,
     )
+
     return jsonify(row), 201
+
 
 #edit property
 @app.patch("/api/properties/edit/<int:prop_id>")
@@ -276,12 +388,22 @@ def update_property(prop_id):
     data = request.get_json(force=True)
     fields, values = [], []
 
-    for key in ["title", "property_type", "description", "price", 
-                "bedrooms", "bathrooms", "size", "location", "photos", "status"]:
+    # Allow updating all fields (old + new)
+    updatable = [
+        "title", "property_type", "description", "price",
+        "bedrooms", "bathrooms", "size", "location", "photos", "status",
+        "furnishing", "floor_level", "tenure", "amenities",
+        "floor_plan", "video_url", "latitude", "longitude"
+    ]
+
+    for key in updatable:
         if key in data:
             if key == "photos" and isinstance(data[key], list):
                 fields.append(f"{key} = %s")
                 values.append(json.dumps(data[key]))
+            elif key == "amenities" and isinstance(data[key], list):
+                fields.append(f"{key} = %s")
+                values.append(data[key])  # Postgres ARRAY
             else:
                 fields.append(f"{key} = %s")
                 values.append(data[key])
@@ -295,8 +417,10 @@ def update_property(prop_id):
         UPDATE properties
         SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
-        RETURNING id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
-                  size, location, photos, status, created_at, updated_at
+        RETURNING id, agent_id, title, property_type, description, price,
+                  bedrooms, bathrooms, size, location, photos, status,
+                  furnishing, floor_level, tenure, amenities, floor_plan,
+                  video_url, latitude, longitude, created_at, updated_at
     """
 
     print("DEBUG SQL:", sql)
@@ -307,35 +431,25 @@ def update_property(prop_id):
         return jsonify({"error": "Property not found or not updated"}), 404
     return jsonify(row)
 
+
 #delete property
 @app.delete("/api/properties/<int:prop_id>")
 def delete_property(prop_id):
     row = execute(
-        "DELETE FROM properties WHERE id = %s RETURNING id;",
+        """
+        UPDATE properties
+        SET is_deleted = TRUE, updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        RETURNING id, status, is_deleted;
+        """,
         [prop_id],
         return_row=True
     )
     if not row:
         return jsonify({"error": "Property not found"}), 404
-    return jsonify({"deleted": row["id"]})
+    return jsonify({"message": "Property archived", "property": row})
 
-app.register_blueprint(users_bp)
-#admin approve property
-@app.patch("/api/properties/<int:prop_id>/approve")
-def approve_property(prop_id):
-    with get_cursor() as cur:
-        cur.execute("""
-            UPDATE properties
-            SET status = 'Active'
-            WHERE id = %s
-            RETURNING id, status
-        """, [prop_id])
-        row = cur.fetchone()
 
-    if not row:
-        return jsonify({"error": "Property not found"}), 404
-
-    return jsonify({"message": "Property approved", "property": dict(row)})
 
 # ---User Registration---
 @app.post("/api/register_user")

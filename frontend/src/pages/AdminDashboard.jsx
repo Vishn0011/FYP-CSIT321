@@ -1,31 +1,74 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import ManageFeatures from "./ManageFeatures";
+import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
+const api = axios.create({
+    baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
+});
 export default function AdminDashboard() {
     const navigate = useNavigate();
-
     const [stats, setStats] = useState({ total: 0, recent: [] });
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
+    const [listings, setListings] = useState([]);
+    const [selected, setSelected] = useState(null);
+
+    async function approveProperty(id) {
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/properties/${id}/approve`, {
+                method: "PATCH",
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) throw new Error("Failed to approve");
+            alert("Property approved!");
+            setSelected(null);
+            // Optionally reload listings
+            window.location.reload();
+        } catch (err) {
+            console.error(err);
+            alert("Approval failed");
+        }
+    }
+
+    // fetch pending listings
+    useEffect(() => {
+        async function fetchListings() {
+            try {
+                const res = await api.get("/api/properties/recent");
+                setListings(res.data);
+            } catch (err) {
+                console.error("Failed to fetch listings:", err);
+            }
+        }
+        fetchListings();
+    }, []);
+
+    async function fetchPropertyDetails(id) {
+        try {
+            const res = await api.get(`/api/properties/${id}`);
+            console.log("Property details response:", res.data);
+            setSelected(res.data);
+        } catch (err) {
+            console.error("Failed to fetch property details:", err);
+        }
+    }
+
+
+
 
     useEffect(() => {
         async function fetchStats() {
             try {
                 setErr("");
-                const res = await fetch(`${API_BASE}/api/users/stats`, {
-                    credentials: "include",
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
+                const res = await api.get("/api/users/stats"); // using api.js
                 setStats({
-                    total: Number(data?.total || 0),
-                    recent: Array.isArray(data?.recent) ? data.recent : [],
+                    total: Number(res.data?.total || 0),
+                    recent: Array.isArray(res.data?.recent) ? res.data.recent : [],
                 });
             } catch (e) {
-                console.error(e);
+                console.error("Failed to fetch stats:", e);
                 setErr("Failed to load stats");
             } finally {
                 setLoading(false);
@@ -33,6 +76,8 @@ export default function AdminDashboard() {
         }
         fetchStats();
     }, []);
+
+
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -103,43 +148,112 @@ export default function AdminDashboard() {
                             )}
                         </Section>
 
-                        {/* Recent Listings (hard-coded) */}
-                        <Section
-                            title="Recent Listings"
-                            onViewAll={() => navigate("/admin/listings")}
-                        >
-                            <table className="w-full text-left">
-                                <thead className="border-b border-gray-200">
-                                    <tr>
-                                        <th className="p-3 font-semibold text-gray-500">
-                                            Property Title
-                                        </th>
-                                        <th className="p-3 font-semibold text-gray-500">Agent</th>
-                                        <th className="p-3 font-semibold text-gray-500">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr className="border-b hover:bg-gray-50">
-                                        <td className="p-3">Bukit Timah Terrace Home</td>
-                                        <td className="p-3 text-gray-500">Tan Wei Ling</td>
-                                        <td className="p-3">
-                                            <span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">
-                                                Active
-                                            </span>
-                                        </td>
-                                    </tr>
-                                    <tr className="border-b hover:bg-gray-50">
-                                        <td className="p-3">Punggol 4-Room HDB (Sea View)</td>
-                                        <td className="p-3 text-gray-500">Muhd Firdaus</td>
-                                        <td className="p-3">
-                                            <span className="px-2 py-1 text-xs font-semibold text-yellow-800 bg-yellow-100 rounded-full">
-                                                Pending
-                                            </span>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        {/* Recent Listings */}
+                        <Section title="Recent Listings">
+                            {loading ? (
+                                <p className="p-3 text-gray-500">Loading...</p>
+                            ) : listings.length === 0 ? (
+                                <p className="p-3 text-gray-500">No pending properties.</p>
+                            ) : (
+                                <table className="w-full text-left">
+                                    <thead className="border-b border-gray-200">
+                                        <tr>
+                                            <th className="p-3 font-semibold text-gray-500">Property Title</th>
+                                            <th className="p-3 font-semibold text-gray-500">Agent</th>
+                                            <th className="p-3 font-semibold text-gray-500">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {listings.map((p) => (
+                                            <tr
+                                                key={p.id}
+                                                className="border-b hover:bg-gray-50 cursor-pointer"
+                                                onClick={() => fetchPropertyDetails(p.id)}
+                                            >
+                                                <td className="p-3">{p.title}</td>
+                                                <td className="p-3 text-gray-500">{p.agent}</td>
+                                                <td className="p-3">
+                                                    <span
+                                                        className={`px-2 py-1 text-xs font-semibold rounded-full ${p.status === "Active"
+                                                                ? "text-green-800 bg-green-100"
+                                                                : p.status === "Pending"
+                                                                    ? "text-yellow-800 bg-yellow-100"
+                                                                    : "text-gray-800 bg-gray-100"
+                                                            }`}
+                                                    >
+                                                        {p.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+
+                            {/* Modal */}
+                            {selected && (
+                                <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+                                    <div className="bg-white rounded-lg shadow-lg p-6 w-[600px] max-h-[90vh] overflow-y-auto">
+                                        {/* Title */}
+                                        <h2 className="text-xl font-bold mb-4">{selected.title}</h2>
+
+                                        {/* Agent */}
+                                        <p className="mb-2 text-gray-600">
+                                            <strong>Agent:</strong> {selected.agent?.name || "N/A"}
+                                        </p>
+
+                                        {/* Status */}
+                                        <p className="mb-2 text-gray-600">
+                                            <strong>Status:</strong> {selected.status}
+                                        </p>
+
+                                        {/* Price */}
+                                        <p className="mb-2 text-gray-600">
+                                            <strong>Price:</strong> ${selected.price}
+                                        </p>
+
+                                        {/* Location */}
+                                        <p className="mb-2 text-gray-600">
+                                            <strong>Location:</strong> {selected.location}
+                                        </p>
+
+                                        {/* Description */}
+                                        <p className="mb-4 text-gray-700">{selected.description}</p>
+
+                                        {/* Photos (if any) */}
+                                        {selected.photos && (
+                                            <div className="grid grid-cols-2 gap-2 mt-4">
+                                                {JSON.parse(selected.photos).map((url, idx) => (
+                                                    <img
+                                                        key={idx}
+                                                        src={url}
+                                                        alt="property"
+                                                        className="w-full h-32 object-cover rounded"
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Buttons */}
+                                        <div className="flex gap-4 justify-end mt-6">
+                                            <button
+                                                onClick={() => approveProperty(selected.id)}
+                                                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                                            >
+                                                Approve
+                                            </button>
+                                            <button
+                                                onClick={() => setSelected(null)}
+                                                className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
+                                            >
+                                                Close
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </Section>
+
 
                         {/* Announcements (hard-coded) */}
                         <Section

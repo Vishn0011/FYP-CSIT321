@@ -347,3 +347,23 @@
     align-items: center;
     margin-bottom: 12px;
 }
+
+.suggestions-list {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    margin-top: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+    list-style: none;
+    padding: 0;
+}
+
+    .suggestions-list li {
+        padding: 8px 12px;
+        cursor: pointer;
+    }
+
+        .suggestions-list li:hover {
+            background: #f0f0f0;
+        }
