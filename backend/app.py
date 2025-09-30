@@ -131,35 +131,43 @@ def logout():
         cur.execute("DELETE FROM sessions WHERE token = %s", [request.token])
     return jsonify({"ok": True})
 
-# # (Optional) keep your existing simple user list if you still want it:
-# @app.get("/api/users")
-# def list_users():
-#     rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
-#     return jsonify(rows)
+#list features that are active
+@app.get("/api/features")
+def get_features():
+    rows = query_all("SELECT id, title, description, icon, category FROM features WHERE is_visible = TRUE")
+    return jsonify(rows)
 
-# @app.get("/api/users")
-# def list_users():
-#     rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
-#     return jsonify(rows)
+#list all features (homepage)
+@app.get("/api/admin/features")
+def admin_features():
+    return jsonify(query_all("SELECT * FROM features ORDER BY id DESC"))
 
-# @app.post("/api/users")
-# def add_user():
-#     data = request.get_json(force=True)
-#     email = data.get("email")
-#     password_hash = data.get("password_hash")
-#     if not email or not password_hash:
-#         return jsonify({"error": "email and password_hash required"}), 400
+#Add features 
+@app.post("/api/admin/features")
+def create_feature():
+    data = request.get_json(force=True)
+    execute(
+        "INSERT INTO features (title, description, icon, category, is_visible) VALUES (%s,%s,%s,%s,%s)",
+        [data["title"], data["description"], data["icon"], data["category"], data.get("is_visible", True)],
+    )
+    return jsonify({"ok": True})
 
-#     row = execute(
-#         "INSERT INTO users(email, password_hash) VALUES(%s, %s) RETURNING id, email, created_at;",
-#         [email, password_hash],
-#         return_row=True
-#     )
-#     return jsonify(row), 201
+#update features 
+@app.patch("/api/admin/features/<int:fid>")
+def update_feature(fid):
+    data = request.get_json(force=True)
+    execute(
+        "UPDATE features SET title=%s, description=%s, icon=%s, category=%s, is_visible=%s WHERE id=%s",
+        [data["title"], data["description"], data["icon"], data["category"], data["is_visible"], fid],
+    )
+    return jsonify({"ok": True})
 
-# if __name__ == "__main__":
-#     port = int(os.getenv("PORT", "8000"))
-#     app.run(host="0.0.0.0", port=port, debug=True)
+#delete features 
+@app.delete("/api/admin/features/<int:fid>")
+def delete_feature(fid):
+    execute("DELETE FROM features WHERE id=%s", [fid])
+    return jsonify({"deleted": fid})
+
 
 # List all active properties (public marketplace view)
 @app.get("/api/properties/all")
