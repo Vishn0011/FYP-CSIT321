@@ -7,6 +7,8 @@ from auth import make_token, expires_at, auth_required, create_session
 from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
 import json
 from routes.users import users_bp
+import psycopg2
+
 
 load_dotenv()
 app = Flask(__name__)
@@ -540,6 +542,109 @@ def homebuyer_properties():
     rows = query_all(query, params)
     return jsonify({"success": True, "items": rows})
 
+# ---Add Dropdown Option---
+@app.post("/api/options/<option_type>")
+def add_dropdown_option(option_type):
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    status = (body.get("status") or "active").strip().lower()
+
+    if not name:
+        return jsonify({"ok": False, "error": "Name is required"}), 400
+
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dropdown_options (type, name, status)
+                VALUES (%s, %s, %s)
+                RETURNING id, type, name, status;
+                """,
+                (option_type, name, status),
+            )
+            row = cur.fetchone()
+
+        option = {
+            "id": row[0],
+            "type": row[1],
+            "name": row[2],
+            "status": row[3],
+        }
+        return jsonify({"ok": True, "option": option}), 201
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+# ---Get Dropdown Options---
+@app.get("/api/options/<option_type>")
+def get_dropdown_options(option_type):
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, name, status
+                FROM dropdown_options
+                WHERE type = %s
+                ORDER BY id ASC;
+                """,
+                (option_type,),
+            )
+            rows = cur.fetchall()
+
+        # rows are dicts, use keys
+        options = [
+            {"id": r["id"], "name": r["name"], "status": r["status"]}
+            for r in rows
+        ]
+
+        return jsonify({"ok": True, "options": options}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+
+# ---Update Dropdown Option Status---
+@app.put("/api/options/<int:option_id>/status")
+def update_dropdown_status(option_id):
+    body = request.get_json(force=True) or {}
+    status = (body.get("status") or "").strip().lower()
+
+    if status not in ["active", "inactive"]:
+        return jsonify({"ok": False, "error": "Invalid status"}), 400
+
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE dropdown_options
+                SET status = %s
+                WHERE id = %s
+                RETURNING id, type, name, status;
+                """,
+                (status, option_id),
+            )
+            row = cur.fetchone()
+
+        if not row:
+            return jsonify({"ok": False, "error": "Option not found"}), 404
+
+        option = {
+            "id": row["id"],
+            "type": row["type"],
+            "name": row["name"],
+            "status": row["status"],
+        }
+        return jsonify({"ok": True, "option": option}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":
