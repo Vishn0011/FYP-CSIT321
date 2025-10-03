@@ -14,6 +14,8 @@ export default function AdminDashboard() {
     const [err, setErr] = useState("");
     const [listings, setListings] = useState([]);
     const [selected, setSelected] = useState(null);
+    const [pendingUsers, setPendingUsers] = useState([]);
+
 
     async function approveProperty(id) {
         try {
@@ -78,6 +80,37 @@ export default function AdminDashboard() {
         }
         fetchStats();
     }, []);
+
+    useEffect(() => {
+        async function fetchPending() {
+            try {
+                const res = await api.get("/api/users/pending");
+                setPendingUsers(res.data);
+            } catch (err) {
+                console.error("Failed to fetch pending users:", err);
+            }
+        }
+        fetchPending();
+    }, []);
+
+    async function approveUser(id) {
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(
+                `${import.meta.env.VITE_API_URL}/api/users/${id}/approve`,
+                {
+                    method: "PATCH",
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
+            if (!res.ok) throw new Error("Failed to approve user");
+            alert("Agent approved!");
+            setPendingUsers((prev) => prev.filter((u) => u.id !== id));
+        } catch (err) {
+            console.error(err);
+            alert("Approval failed");
+        }
+    }
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -371,6 +404,47 @@ export default function AdminDashboard() {
                         >
                             <ManageFeatures />
                         </Section>
+                        {/* Pending Agent Approvals */}
+                        <Section title="Pending Agent Approvals">
+                            {pendingUsers.length === 0 ? (
+                                <p className="text-sm text-gray-500">No pending agent accounts.</p>
+                            ) : (
+                                <table className="w-full text-left">
+                                    <thead className="border-b border-gray-200">
+                                        <tr>
+                                            <th className="p-3 font-semibold text-gray-500">Name</th>
+                                            <th className="p-3 font-semibold text-gray-500">Email</th>
+                                            <th className="p-3 font-semibold text-gray-500">Role</th>
+                                            <th className="p-3 font-semibold text-gray-500">Status</th>
+                                            <th className="p-3 font-semibold text-gray-500">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {pendingUsers.map((u) => (
+                                            <tr key={u.id} className="border-b hover:bg-gray-50">
+                                                <td className="p-3">{u.name || "—"}</td>
+                                                <td className="p-3 text-gray-500">{u.email}</td>
+                                                <td className="p-3 capitalize">{u.role}</td>
+                                                <td className="p-3">
+                                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                                        {u.status}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <button
+                                                        onClick={() => approveUser(u.id)}
+                                                        className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 text-sm"
+                                                    >
+                                                        Approve
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </Section>
+
                     </div>
                 </div>
             </main>

@@ -8,10 +8,16 @@ from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
 import json
 from routes.users import users_bp
 import psycopg2
+from google.oauth2 import id_token
+from google.auth.transport import requests as grequests
+
 
 
 load_dotenv()
 app = Flask(__name__)
+
+CLIENT_ID = "98981474983-d5h2shgl18u6oovn378q3ovao61jtbm0.apps.googleusercontent.com"  # same as frontend
+
 
 # Allow frontend (Vite dev server) to call this API in dev
 CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
@@ -42,50 +48,65 @@ def login():
     email = (body.get("email") or "").strip()
     password = (body.get("password") or "").strip()
     role = (body.get("role") or "").strip().lower()
+
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
-    
-    if role not in ("agent", "homeowner"):  # add other roles if you use them
+
+    if role not in ("agent", "homeowner"):
         return jsonify({"error": "invalid role"}), 400
 
     with get_cursor() as cur:
         cur.execute("""
-            SELECT id, email, name, role
+            SELECT id, email, name, role, is_active, status
             FROM users
             WHERE email = %s
               AND crypt(%s, password_hash) = password_hash
-              AND COALESCE(is_active, TRUE)
               AND role = %s
-            """, [email, password, role])
+        """, [email, password, role])
         user = cur.fetchone()
 
     if not user:
         return jsonify({"error": "invalid credentials or role"}), 401
 
-    token = make_token()
-    exp = expires_at(SESSION_TTL_MIN)   # still UTC
+    #Enforce approval rules
+    if not user["is_active"] or user["status"] != "approved":
+        return jsonify({
+            "error": "Your account is pending admin approval.",
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "name": user.get("name"),
+                "role": user.get("role"),
+                "status": user.get("status"),
+            }
+        }), 403
 
-    # insert into DB in UTC (best practice)
+    # Generate session
+    token = make_token()
+    exp = expires_at(SESSION_TTL_MIN)
+
     with get_cursor() as cur:
         cur.execute("""
             INSERT INTO sessions(user_id, token, expires_at)
             VALUES (%s, %s, %s)
         """, [user["id"], token, exp])
 
-    # convert expiry to SG time before sending back
+    # Convert expiry to SG time
     sg = pytz.timezone("Asia/Singapore")
     exp_sg = exp.astimezone(sg)
 
     return jsonify({
         "token": token,
-        "expires_at": exp_sg.isoformat(),   # send SG time
+        "expires_at": exp_sg.isoformat(),
         "user": {
             "id": user["id"],
             "email": user["email"],
             "name": user.get("name"),
-            "role": user.get("role")
+            "role": user.get("role"),
+            "status": user.get("status"),
         }
     })
+
 
 #Auth Admin Login
 
@@ -136,6 +157,92 @@ def admin_login():
         "user": user
     })
 
+# --- Google OAuth Login ---
+@app.post("/auth/google/login")
+def google_login():
+    body = request.get_json(force=True) or {}
+    token = (body.get("token") or "").strip()
+
+    if not token:
+        return jsonify({"error": "missing token"}), 400
+
+    try:
+        idinfo = id_token.verify_oauth2_token(token, grequests.Request(), CLIENT_ID)
+        email = idinfo["email"]
+
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT id, email, name, role, is_active, status
+                FROM users
+                WHERE email = %s
+            """, [email])
+            user = cur.fetchone()
+
+        if not user:
+            return jsonify({"error": "No account found, please sign up first."}), 404
+
+        if not user["is_active"] or user["status"] != "approved":
+            return jsonify({
+                "error": "Your account is pending admin approval.",
+                "user": user
+            }), 403
+
+        # Issue session token
+        session_token = make_token()
+        exp = expires_at(SESSION_TTL_MIN)
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO sessions(user_id, token, expires_at)
+                VALUES (%s, %s, %s)
+            """, [user["id"], session_token, exp])
+
+        return jsonify({"token": session_token, "user": user})
+
+    except ValueError:
+        return jsonify({"error": "Invalid Google token"}), 400
+
+@app.post("/auth/google/signup")
+def google_signup():
+    try:
+        body = request.get_json(force=True) or {}
+        token = (body.get("token") or "").strip()
+        role = (body.get("role") or "homeowner").lower()
+
+        # verify Google token
+        idinfo = id_token.verify_oauth2_token(token, grequests.Request(), CLIENT_ID)
+        email = idinfo["email"]
+        name = idinfo.get("name", "")
+
+        # check if user already exists
+        with get_cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE email = %s", [email])
+            if cur.fetchone():
+                return jsonify({"error": "Account already exists"}), 409
+
+        # Approval logic
+        if role == "agent":
+            is_active, status = False, "pending"
+        else:
+            is_active, status = True, "approved"
+
+        # Insert with fake password hash
+        fake_hash = "google-oauth"
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO users (email, name, role, password_hash, is_active, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, email, name, role, is_active, status
+            """, [email, name, role, fake_hash, is_active, status])
+            user = cur.fetchone()
+
+        return jsonify({"user": user}), 201
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+
 
 # --- Who am I (protected) ---
 @app.get("/me")
@@ -156,6 +263,35 @@ def logout():
 def list_users():
     rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
     return jsonify(rows)
+
+@app.get("/api/users/pending")
+def get_pending_users():
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT id, name, email, role, status, is_active
+            FROM users
+            WHERE role = 'agent' AND status = 'pending'
+            ORDER BY created_at DESC
+        """)
+        users = cur.fetchall()
+    return jsonify(users)
+
+@app.patch("/api/users/<int:user_id>/approve")
+def approve_user(user_id):
+    with get_cursor() as cur:
+        cur.execute("""
+            UPDATE users
+            SET is_active = TRUE, status = 'approved'
+            WHERE id = %s AND role = 'agent'
+            RETURNING id, name, email, role, status, is_active
+        """, [user_id])
+        user = cur.fetchone()
+
+    if not user:
+        return jsonify({"error": "User not found or not an agent"}), 404
+
+    return jsonify(user)
+
 
 @app.get("/api/users/stats")
 def user_stats():
