@@ -81,7 +81,8 @@ function Dashboard() {
 // Main App
 // ==========================
 export default function App() {
-    return (
+ return (
+    <div className="min-h-screen bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-50 transition-colors">
         <BrowserRouter>
             <AuthProvider>
                 {/* Nav is outside Routes so it always shows */}
@@ -232,5 +233,6 @@ export default function App() {
                 </Routes>
             </AuthProvider>
         </BrowserRouter>
+    </div>
     );
 }
