@@ -1,110 +1,307 @@
 /* ---------- Theme ---------- */
 :root {
-    --primary: #00674f; /* emerald */
-    --primary-600: #27ae60; /* darker emerald */
+    --primary: #00674f;
+    --primary-600: #27ae60;
     --primary-100: #e8f8ef;
     --bg: #f7f9f8;
     --surface: #ffffff;
     --text: #1f2937;
     --muted: #6b7280;
     --border: #e5e7eb;
-    --danger: #ef4444;
-    --danger-600: #dc2626;
 }
 
+/* ---------- Page shell ---------- */
 .property-details-page {
     max-width: 1100px;
-    margin: 24px auto;
-    padding: 0 16px 40px;
+    margin: 40px auto 80px;
+    padding: 0 20px;
     color: var(--text);
+    background: var(--bg);
+    animation: fadeIn 0.4s ease-in;
 }
 
+/* ---------- Breadcrumb ---------- */
 .breadcrumb {
-    margin-bottom: 16px;
     font-size: 14px;
     color: var(--muted);
+    margin-bottom: 12px;
 }
 
+    .breadcrumb strong {
+        color: var(--primary-600);
+        font-weight: 700;
+    }
+
+/* ---------- Property Details Layout ---------- */
 .property-details-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 24px;
+    grid-template-columns: 1.1fr 0.9fr; /* gallery slightly wider */
+    gap: 28px;
+    align-items: stretch; /* auto-equal height */
+    margin: 32px auto;
+    max-width: 1100px;
+    padding: 0 16px;
 }
 
-.gallery-scroll {
+/* ---------- Gallery Wrapper ---------- */
+.photo-gallery-wrapper {
+    position: relative;
     display: flex;
-    gap: 12px;
-    overflow-x: auto;
-    padding: 12px;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
 }
 
-    .gallery-scroll img {
-        flex: 0 0 auto;
-        width: 500px;
-        height: 350px;
-        object-fit: cover;
-        border-radius: 12px;
-    }
-
-.gallery-placeholder {
-    padding: 40px;
-    text-align: center;
-    color: var(--muted);
-}
-
-.property-info .price {
-    font-size: 28px;
-    font-weight: bold;
-    color: var(--primary);
-}
-
-.property-info .location {
-    font-size: 16px;
-    margin: 4px 0;
-    color: var(--muted);
-}
-
-.property-info .short-desc {
-    margin: 8px 0 16px;
-    font-size: 14px;
-    color: var(--text);
-}
-
-.details-title {
-    margin-top: 16px;
-    font-weight: 700;
-}
-
-.details-list {
-    margin: 12px 0;
-    padding-left: 16px;
-    font-size: 14px;
-    color: var(--text);
-}
-
-    .details-list li {
-        margin-bottom: 6px;
-    }
-
-.actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 16px;
-}
-
+/* ---------- Scrollable Gallery ---------- */
 .photo-gallery {
     display: flex;
-    gap: 12px;
     overflow-x: auto;
-    padding: 10px 0;
+    gap: 12px;
     scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    padding: 12px;
+    flex: 1; /* ensures it fills full height */
 }
 
+    .photo-gallery::-webkit-scrollbar {
+        display: none;
+    }
+
     .photo-gallery img {
-        flex: 0 0 auto;
-        width: 500px;
-        height: 350px;
+        flex-shrink: 0;
+        width: 100%;
+        max-width: 380px;
+        aspect-ratio: 16/10;
         object-fit: cover;
         border-radius: 12px;
         scroll-snap-align: start;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
     }
+
+        .photo-gallery img:hover {
+            transform: scale(1.03);
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15);
+        }
+
+
+/* ---------- Arrows ---------- */
+.gallery-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s ease;
+    z-index: 3;
+}
+
+    .gallery-nav:hover {
+        background: var(--primary-100);
+        transform: translateY(-50%) scale(1.08);
+    }
+
+    .gallery-nav.left {
+        left: 10px;
+    }
+
+    .gallery-nav.right {
+        right: 10px;
+    }
+
+/* ---------- Property Info Card ---------- */
+.property-info.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between; /* aligns price, details, and actions neatly */
+}
+
+.property-info .price {
+    font-size: 1.9rem;
+    font-weight: 800;
+    color: var(--primary-600);
+    margin-bottom: 10px;
+}
+
+.property-info .location {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    margin-bottom: 8px;
+    color: var(--text);
+}
+
+.property-info .short-desc {
+    font-size: 15px;
+    color: var(--muted);
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.property-info .details-title {
+    font-weight: 700;
+    margin-top: 18px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+}
+
+.property-info .details-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+    .property-info .details-list li {
+        margin: 4px 0;
+    }
+
+.property-info .actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.property-info em {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 12px;
+}
+
+/* ---------- Floating Card Hover ---------- */
+.property-details-grid:hover .photo-gallery-wrapper,
+.property-details-grid:hover .property-info.card {
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+    transition: all 0.25s ease;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+    .property-details-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    .photo-gallery img {
+        max-width: 100%;
+        height: 230px;
+    }
+
+    .property-info.card {
+        padding: 22px;
+    }
+}
+
+/* ---------- Modal (unchanged) ---------- */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+}
+
+.modal-box {
+    background: #fff;
+    border-radius: 12px;
+    width: 400px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 12px;
+}
+
+.modal-box input,
+.modal-box textarea {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: #fff;
+}
+
+    .btn-primary:hover {
+        background: var(--primary-600);
+    }
+
+.btn-outline {
+    background: #fff;
+    color: var(--primary-600);
+    border: 1px solid var(--primary);
+}
+
+    .btn-outline:hover {
+        background: var(--primary-100);
+    }
+
+/* ---------- Animation ---------- */
+.fade-in {
+    animation: fadeIn 0.4s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

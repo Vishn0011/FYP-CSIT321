@@ -782,6 +782,128 @@ def update_dropdown_status(option_id):
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
+# create enquiry
+@app.post("/api/enquiries")
+def create_enquiry():
+    body = request.get_json(force=True) or {}
+    property_id = body.get("property_id")
+    agent_id = body.get("agent_id")
+    buyer_name = (body.get("buyer_name") or "").strip()
+    buyer_email = (body.get("buyer_email") or "").strip()
+    buyer_phone = (body.get("buyer_phone") or "").strip()
+    message = (body.get("message") or "").strip()
+
+    # simple validation
+    if not (property_id and agent_id and buyer_name and buyer_email and message):
+        return jsonify({"ok": False, "error": "Missing required fields"}), 400
+
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO enquiries (property_id, agent_id, buyer_name, buyer_email, buyer_phone, message)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, property_id, agent_id, buyer_name, buyer_email, buyer_phone, message, status, created_at;
+                """,
+                (property_id, agent_id, buyer_name, buyer_email, buyer_phone, message),
+            )
+            row = cur.fetchone()
+            conn.commit()
+
+        enquiry = {
+            "id": row["id"],
+            "property_id": row["property_id"],
+            "agent_id": row["agent_id"],
+            "buyer_name": row["buyer_name"],
+            "buyer_email": row["buyer_email"],
+            "buyer_phone": row["buyer_phone"],
+            "message": row["message"],
+            "status": row["status"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        }
+        return jsonify({"ok": True, "enquiry": enquiry}), 201
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+#get enquiries for agent
+@app.get("/api/enquiries/agent/<int:agent_id>")
+def get_agent_enquiries(agent_id):
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT e.id, e.property_id, p.title AS property_title,
+                       e.buyer_name, e.buyer_email, e.buyer_phone,
+                       e.message, e.status, e.created_at
+                FROM enquiries e
+                JOIN properties p ON e.property_id = p.id
+                WHERE e.agent_id = %s
+                ORDER BY e.created_at DESC;
+                """,
+                (agent_id,),
+            )
+            rows = cur.fetchall()
+
+        enquiries = [
+            {
+                "id": r["id"],
+                "property_id": r["property_id"],
+                "property_title": r["property_title"],
+                "buyer_name": r["buyer_name"],
+                "buyer_email": r["buyer_email"],
+                "buyer_phone": r["buyer_phone"],
+                "message": r["message"],
+                "status": r["status"],
+                "created_at": r["created_at"].strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            for r in rows
+        ]
+
+        return jsonify({"ok": True, "enquiries": enquiries}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+#update enquiry status
+@app.put("/api/enquiries/<int:enquiry_id>/status")
+def update_enquiry_status(enquiry_id):
+    body = request.get_json(force=True) or {}
+    new_status = (body.get("status") or "").strip().capitalize()
+
+    if new_status not in ["Pending", "Contacted", "Closed"]:
+        return jsonify({"ok": False, "error": "Invalid status"}), 400
+
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE enquiries
+                SET status = %s
+                WHERE id = %s
+                RETURNING id, status;
+                """,
+                (new_status, enquiry_id),
+            )
+            row = cur.fetchone()
+            conn.commit()
+
+        if not row:
+            return jsonify({"ok": False, "error": "Enquiry not found"}), 404
+
+        return jsonify({"ok": True, "enquiry": {"id": row["id"], "status": row["status"]}}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))

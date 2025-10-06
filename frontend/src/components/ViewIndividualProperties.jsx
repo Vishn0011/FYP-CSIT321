@@ -1,7 +1,17 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
-import "./css/ViewIndividualProperties.css";
+import Swal from "sweetalert2";
+import {
+    MapPin,
+    Mail,
+    Calendar,
+    TrendingUp,
+    CheckCircle,
+    ShieldCheck,
+    ChevronLeft,
+    ChevronRight,
+} from "lucide-react";
 import {
     LineChart,
     Line,
@@ -11,6 +21,7 @@ import {
     Tooltip,
     ResponsiveContainer,
 } from "recharts";
+import "./css/ViewIndividualProperties.css";
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api",
@@ -25,13 +36,36 @@ const priceHistory = [
     { month: "Jun", price: 1005000 },
 ];
 
-
 export default function PropertyDetails() {
     const { id } = useParams();
     const [property, setProperty] = useState(null);
+    const [showModal, setShowModal] = useState(false);
+    const [form, setForm] = useState({
+        buyer_name: "",
+        buyer_email: "",
+        buyer_phone: "",
+        message: "",
+    });
+
+    // 🔒 user role check
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const userRole = user?.role || "guest";
+
+    const galleryRef = useRef(null);
+
+    function scrollGallery(direction) {
+        if (galleryRef.current) {
+            const scrollAmount = galleryRef.current.clientWidth * 0.8;
+            galleryRef.current.scrollBy({
+                left: direction * scrollAmount,
+                behavior: "smooth",
+            });
+        }
+    }
 
     useEffect(() => {
-        api.get(`/properties/${id}`)
+        api
+            .get(`/properties/${id}`)
             .then((res) => setProperty(res.data))
             .catch(() => console.error("Failed to fetch property details"));
     }, [id]);
@@ -39,112 +73,117 @@ export default function PropertyDetails() {
     if (!property) {
         return <p style={{ padding: "20px" }}>Loading property details...</p>;
     }
+
     const photos = property.photos ? JSON.parse(property.photos) : [];
 
     return (
-        <div className="property-details-page">
+        <div className="property-details-page fade-in">
             {/* Breadcrumb */}
             <div className="breadcrumb">
-                <span>My Listings</span> &gt; <strong>{property.title}</strong>
+                <span>Properties</span> &gt;{" "}
+                <strong>{property.title}</strong>
             </div>
 
             <div className="property-details-grid">
-                {/* Photo gallery */}
-                <div className="photo-gallery">
-                    {photos.map((src, i) => (
-                        <img key={i} src={src} alt={`Photo ${i}`} />
-                    ))}
+                {/* --- Photo Gallery with Arrows --- */}
+                <div className="photo-gallery-wrapper">
+                    <div className="photo-gallery" ref={galleryRef}>
+                        {photos.map((src, i) => (
+                            <img key={i} src={src} alt={`Photo ${i + 1}`} />
+                        ))}
+                    </div>
+
+                    {photos.length > 1 && (
+                        <>
+                            <button
+                                className="gallery-nav left"
+                                onClick={() => scrollGallery(-1)}
+                            >
+                                <ChevronLeft className="w-5 h-5 text-emerald-700" />
+                            </button>
+                            <button
+                                className="gallery-nav right"
+                                onClick={() => scrollGallery(1)}
+                            >
+                                <ChevronRight className="w-5 h-5 text-emerald-700" />
+                            </button>
+                        </>
+                    )}
                 </div>
 
-                {/* Right: Property info */}
+                {/* --- Property Info --- */}
                 <div className="property-info card">
                     <div className="card-body">
                         <h2 className="price">
                             SGD {Number(property.price).toLocaleString()}
                         </h2>
-                        <p className="location">{property.location}</p>
+                        <p className="location flex items-center">
+                            <MapPin className="w-4 h-4 mr-1 text-emerald-700" />
+                            {property.location}
+                        </p>
                         <p className="short-desc">
                             {property.description?.substring(0, 100)}...
                         </p>
 
                         <h3 className="details-title">Property Details</h3>
                         <ul className="details-list">
-                            <li>
-                                <strong>Bedrooms:</strong> {property.bedrooms}
-                            </li>
-                            <li>
-                                <strong>Bathrooms:</strong> {property.bathrooms}
-                            </li>
-                            <li>
-                                <strong>Sq. Footage:</strong> {property.size} sqft
-                            </li>
-                            <li>
-                                <strong>Status:</strong> {property.status}
-                            </li>
-                            <li>
-                                <strong>Type:</strong> {property.property_type}
-                            </li>
+                            <li><strong>Bedrooms:</strong> {property.bedrooms}</li>
+                            <li><strong>Bathrooms:</strong> {property.bathrooms}</li>
+                            <li><strong>Sq. Footage:</strong> {property.size} sqft</li>
+                            <li><strong>Status:</strong> {property.status}</li>
+                            <li><strong>Type:</strong> {property.property_type}</li>
                         </ul>
 
-                        <div className="actions">
-                            <button className="btn btn-primary">Contact Agent</button>
-                            <button className="btn btn-outline">Schedule a Tour</button>
-                        </div>
+                        {userRole === "homeowner" && (
+                            <div className="actions">
+                                <button
+                                    className="btn btn-primary flex items-center gap-2"
+                                    onClick={() => setShowModal(true)}
+                                >
+                                    <Mail className="w-4 h-4" /> Contact Agent
+                                </button>
+                                <button className="btn btn-outline flex items-center gap-2">
+                                    <Calendar className="w-4 h-4" /> Schedule a Tour
+                                </button>
+                            </div>
+                        )}
+
+                        {userRole === "agent" && (
+                            <p className="text-sm text-gray-500 mt-4 italic">
+                                (You’re viewing this as an agent — enquiries are hidden.)
+                            </p>
+                        )}
                     </div>
                 </div>
             </div>
 
-            {/* Description */}
+            {/* --- AI Insights Section --- */}
             <div className="card mt-24">
                 <div className="card-body">
-                    <h3>Description</h3>
-                    <p>{property.description}</p>
-                </div>
-            </div>
+                    <h3 className="mb-3 flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5 text-emerald-700" />
+                        Price History & AI Insights
+                    </h3>
 
-            {/* --- Hardcoded AI Insights Section --- */}
-            <div className="card mt-24">
-                <div className="card-body">
-                    <h3>Price History & AI Insights</h3>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={priceHistory}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="month" />
+                            <YAxis />
+                            <Tooltip />
+                            <Line
+                                type="monotone"
+                                dataKey="price"
+                                stroke="#16a34a"
+                                strokeWidth={3}
+                                dot={{ r: 4 }}
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
 
-                    {/* Mock chart placeholder */}
-                    <div className="bg-gray-100 rounded-lg p-6 my-4">
-                        <ResponsiveContainer width="100%" height={300}>
-                            <LineChart data={priceHistory}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="month" />
-                                <YAxis domain={["auto", "auto"]} />
-                                <Tooltip />
-                                <Line type="monotone" dataKey="price" stroke="#4F46E5" strokeWidth={3} dot={{ r: 4 }} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-
-                    {/* AI Price Prediction */}
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mb-6">
-                        <h4 className="text-purple-700 font-semibold mb-2">
-                            🧠 AI Price Prediction
-                        </h4>
-                        <p className="text-gray-700 mb-4">
-                            Our advanced AI model analyzes 47 market factors to predict this
-                            property will appreciate <strong>3–5% over the next 12 months</strong>.
-                        </p>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div className="p-3 bg-white rounded border">
-                                <p className="text-gray-600">Confidence Level</p>
-                                <p className="font-semibold text-purple-700">92%</p>
-                            </div>
-                            <div className="p-3 bg-white rounded border">
-                                <p className="text-gray-600">Market Score</p>
-                                <p className="font-semibold text-purple-700">8.7 / 10</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* AI Market Analysis */}
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-                        <h4 className="text-green-700 font-semibold mb-2">
-                            AI Market Analysis
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-6 mt-6">
+                        <h4 className="text-green-700 font-semibold mb-2 flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4" /> AI Market Analysis
                         </h4>
                         <ul className="text-gray-700 list-disc list-inside">
                             <li>Strong demand in this neighborhood (+12% vs city avg)</li>
@@ -155,6 +194,114 @@ export default function PropertyDetails() {
                     </div>
                 </div>
             </div>
+
+            {/* --- Contact Modal (Homeowner only) --- */}
+            {userRole === "homeowner" && showModal && (
+                <div className="modal-backdrop">
+                    <div className="modal-box">
+                        <h3 className="modal-title flex items-center gap-2">
+                            <Mail className="w-5 h-5 text-emerald-700" /> Contact Agent
+                        </h3>
+
+                        <label>Your Name</label>
+                        <input
+                            type="text"
+                            value={form.buyer_name}
+                            onChange={(e) =>
+                                setForm({ ...form, buyer_name: e.target.value })
+                            }
+                            placeholder="Enter your name"
+                        />
+
+                        <label>Email</label>
+                        <input
+                            type="email"
+                            value={form.buyer_email}
+                            onChange={(e) =>
+                                setForm({ ...form, buyer_email: e.target.value })
+                            }
+                            placeholder="Enter your email"
+                        />
+
+                        <label>Phone (optional)</label>
+                        <input
+                            type="tel"
+                            value={form.buyer_phone}
+                            onChange={(e) =>
+                                setForm({ ...form, buyer_phone: e.target.value })
+                            }
+                            placeholder="Enter your phone"
+                        />
+
+                        <label>Message</label>
+                        <textarea
+                            rows="3"
+                            value={form.message}
+                            onChange={(e) =>
+                                setForm({ ...form, message: e.target.value })
+                            }
+                            placeholder="Hi, I’m interested in this property..."
+                        ></textarea>
+
+                        <div className="modal-actions">
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="btn btn-outline"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const res = await api.post("/enquiries", {
+                                            property_id: property.id,
+                                            agent_id: property.agent_id,
+                                            buyer_name: form.buyer_name,
+                                            buyer_email: form.buyer_email,
+                                            buyer_phone: form.buyer_phone,
+                                            message: form.message,
+                                        });
+
+                                        if (res.data.ok) {
+                                            Swal.fire({
+                                                icon: "success",
+                                                title: "Enquiry Sent!",
+                                                text: "Your message has been sent successfully.",
+                                                confirmButtonColor: "#00674f",
+                                                timer: 2000,
+                                            });
+                                            setShowModal(false);
+                                            setForm({
+                                                buyer_name: "",
+                                                buyer_email: "",
+                                                buyer_phone: "",
+                                                message: "",
+                                            });
+                                        } else {
+                                            Swal.fire({
+                                                icon: "error",
+                                                title: "Failed to Send",
+                                                text:
+                                                    res.data.error ||
+                                                    "Failed to send enquiry. Please try again.",
+                                            });
+                                        }
+                                    } catch (err) {
+                                        Swal.fire({
+                                            icon: "error",
+                                            title: "Server Error",
+                                            text: "Something went wrong while sending your enquiry.",
+                                        });
+                                    }
+                                }}
+                                className="btn btn-primary flex items-center gap-2"
+                            >
+                                <CheckCircle className="w-4 h-4" /> Send
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

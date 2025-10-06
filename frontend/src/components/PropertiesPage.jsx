@@ -1,10 +1,8 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import "./css/PropertiesPage.css";
-import { Link } from "react-router-dom";
-import { useNavigate } from "react-router-dom";
-
+import { Link, useNavigate } from "react-router-dom";
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api",
@@ -12,43 +10,47 @@ const api = axios.create({
 
 export default function PropertiesPage() {
     const navigate = useNavigate();
-    // Load logged-in user
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     const agentId = user?.id;
+
     const [properties, setProperties] = useState([]);
     const [stats, setStats] = useState({ total: 0, active: 0, pending: 0 });
+    const [enquiries, setEnquiries] = useState([]);
 
+    // Fetch properties + enquiries
     useEffect(() => {
         api.get("/properties", { params: { agent_id: agentId } })
             .then((res) => {
                 setProperties(res.data);
-
-                // derive stats
                 const total = res.data.length;
                 const active = res.data.filter((p) => p.status === "Active").length;
                 const pending = res.data.filter((p) => p.status === "Pending").length;
                 setStats({ total, active, pending });
             })
             .catch(() => console.error("Failed to fetch properties"));
+
+        api.get(`/enquiries/agent/${agentId}`)
+            .then((res) => {
+                if (res.data.ok) setEnquiries(res.data.enquiries);
+            })
+            .catch(() => console.error("Failed to fetch enquiries"));
     }, []);
 
+    // Delete property
     function handleDelete(id) {
         Swal.fire({
             title: "Are you sure?",
             text: "This will permanently delete the property.",
             icon: "warning",
             showCancelButton: true,
-            confirmButtonColor: "#00674f", // emerald green
+            confirmButtonColor: "#00674f",
             cancelButtonColor: "#d33",
-            confirmButtonText: "Yes, delete it!"
+            confirmButtonText: "Yes, delete it!",
         }).then(async (result) => {
             if (result.isConfirmed) {
                 try {
                     await api.delete(`/properties/${id}`);
-
-                    //Update UI instantly: remove from state
                     setProperties((prev) => prev.filter((p) => p.id !== id));
-
                     Swal.fire("Deleted!", "Property deleted successfully.", "success");
                 } catch (err) {
                     console.error(err.response?.data || err.message);
@@ -58,18 +60,80 @@ export default function PropertiesPage() {
         });
     }
 
+    // Update enquiry status with SweetAlert confirmation
+    async function handleStatusUpdate(enquiry) {
+        const nextStatus =
+            enquiry.status === "Pending" ? "Contacted" : "Closed";
+
+        Swal.fire({
+            title: `Mark as ${nextStatus}?`,
+            text:
+                nextStatus === "Contacted"
+                    ? "This will mark the enquiry as contacted."
+                    : "This will mark the enquiry as closed.",
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonColor: "#00674f",
+            cancelButtonColor: "#d33",
+            confirmButtonText: `Yes, mark ${nextStatus}`,
+        }).then(async (result) => {
+            if (!result.isConfirmed) return;
+
+            try {
+                const res = await api.put(`/enquiries/${enquiry.id}/status`, {
+                    status: nextStatus,
+                });
+
+                if (res.data.ok) {
+                    setEnquiries((prev) =>
+                        prev.map((e) =>
+                            e.id === enquiry.id
+                                ? { ...e, status: res.data.enquiry.status }
+                                : e
+                        )
+                    );
+
+                    Swal.fire({
+                        icon: "success",
+                        title: "Status Updated",
+                        text: `Enquiry marked as ${nextStatus}.`,
+                        confirmButtonColor: "#00674f",
+                    });
+                } else {
+                    Swal.fire({
+                        icon: "error",
+                        title: "Update Failed",
+                        text: res.data.error || "Could not update status.",
+                        confirmButtonColor: "#00674f",
+                    });
+                }
+            } catch (err) {
+                console.error(err);
+                Swal.fire({
+                    icon: "error",
+                    title: "Error",
+                    text: "Something went wrong updating the enquiry status.",
+                    confirmButtonColor: "#00674f",
+                });
+            }
+        });
+    }
+
     return (
         <div className="properties-page">
-            {/* Page header with button */}
+            {/* Header */}
             <div className="page-header">
                 <h1 className="page-title">Agent Dashboard</h1>
                 <Link to="/addproperties" className="btn btn-primary">
                     + New Listing
                 </Link>
             </div>
-            <p className="muted-text">Welcome back, {user.name}! This is a overview of your listings and performance.</p>
 
-            {/* Stats cards */}
+            <p className="muted-text">
+                Welcome back, {user.name}! Here’s an overview of your listings and enquiries.
+            </p>
+
+            {/* Stats */}
             <div className="stats-grid mt-24">
                 <div className="card stat-card">
                     <div className="stat-value">{stats.total}</div>
@@ -85,7 +149,7 @@ export default function PropertiesPage() {
                 </div>
             </div>
 
-            {/* Listing management */}
+            {/* Listings */}
             <h2 className="section-title mt-24">Listing Management</h2>
             <div className="table-wrap">
                 <table className="table">
@@ -99,11 +163,16 @@ export default function PropertiesPage() {
                     <tbody>
                         {properties.map((p) => (
                             <tr key={p.id}>
-                                <td>{p.location}, {p.size} sqft</td>
+                                <td>
+                                    {p.location}, {p.size} sqft
+                                </td>
                                 <td>
                                     <span
-                                        className={`badge ${p.status === "Active" ? "badge-success" :
-                                                p.status === "Pending" ? "badge-warning" : "badge-muted"
+                                        className={`badge ${p.status === "Active"
+                                                ? "badge-success"
+                                                : p.status === "Pending"
+                                                    ? "badge-warning"
+                                                    : "badge-muted"
                                             }`}
                                     >
                                         {p.status}
@@ -112,13 +181,17 @@ export default function PropertiesPage() {
                                 <td className="flex gap-8">
                                     <button
                                         className="btn btn-outline"
-                                        onClick={() => navigate(`/properties/${p.id}`)}
+                                        onClick={() =>
+                                            navigate(`/properties/${p.id}`)
+                                        }
                                     >
                                         View
                                     </button>
                                     <button
                                         className="btn btn-outline"
-                                        onClick={() => navigate(`/properties/edit/${p.id}`)}
+                                        onClick={() =>
+                                            navigate(`/properties/edit/${p.id}`)
+                                        }
                                     >
                                         Edit
                                     </button>
@@ -133,11 +206,82 @@ export default function PropertiesPage() {
                         ))}
                         {properties.length === 0 && (
                             <tr>
-                                <td colSpan="3" className="empty">No properties found</td>
+                                <td colSpan="3" className="empty">
+                                    No properties found
+                                </td>
                             </tr>
                         )}
                     </tbody>
                 </table>
+            </div>
+
+            {/* Buyer Enquiries */}
+            <div className="card mt-24">
+                <div className="card-body">
+                    <h3 className="text-lg font-bold mb-4">Buyer Enquiries</h3>
+
+                    {enquiries.length === 0 ? (
+                        <p className="text-gray-600">No enquiries received yet.</p>
+                    ) : (
+                        <div className="table-wrap">
+                            <table className="table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Buyer</th>
+                                        <th>Contact</th>
+                                        <th>Property</th>
+                                        <th>Message</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {enquiries.map((e) => (
+                                        <tr key={e.id}>
+                                            <td>{e.created_at}</td>
+                                            <td>{e.buyer_name}</td>
+                                            <td>
+                                                <div>{e.buyer_email}</div>
+                                                <div className="text-sm text-gray-500">
+                                                    {e.buyer_phone}
+                                                </div>
+                                            </td>
+                                            <td>{e.property_title}</td>
+                                            <td>{e.message}</td>
+                                            <td>
+                                                <span
+                                                    className={`badge ${e.status === "Pending"
+                                                            ? "badge-warning"
+                                                            : e.status === "Contacted"
+                                                                ? "badge-success"
+                                                                : "badge-muted"
+                                                        }`}
+                                                >
+                                                    {e.status}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                {e.status !== "Closed" && (
+                                                    <button
+                                                        className="btn btn-outline text-xs"
+                                                        onClick={() =>
+                                                            handleStatusUpdate(e)
+                                                        }
+                                                    >
+                                                        {e.status === "Pending"
+                                                            ? "Mark Contacted"
+                                                            : "Mark Closed"}
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Smart Insights */}
@@ -146,9 +290,10 @@ export default function PropertiesPage() {
                     <h3>Smart Insights</h3>
                     <p>
                         Leverage AI-powered recommendations to optimize your listings and reach the right buyers.
-                        Explore insights on pricing, market trends, and property features that resonate with potential clients.
                     </p>
-                    <button className="btn btn-primary mt-16">Explore Insights</button>
+                    <button className="btn btn-primary mt-16">
+                        Explore Insights
+                    </button>
                 </div>
             </div>
         </div>
