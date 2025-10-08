@@ -16,6 +16,8 @@ export default function PropertiesPage() {
     const [properties, setProperties] = useState([]);
     const [stats, setStats] = useState({ total: 0, active: 0, pending: 0 });
     const [enquiries, setEnquiries] = useState([]);
+    const [showAll, setShowAll] = useState(false);
+    const [statusFilter, setStatusFilter] = useState("All");
 
     // Fetch properties + enquiries
     useEffect(() => {
@@ -28,13 +30,23 @@ export default function PropertiesPage() {
                 setStats({ total, active, pending });
             })
             .catch(() => console.error("Failed to fetch properties"));
-
-        api.get(`/enquiries/agent/${agentId}`)
-            .then((res) => {
-                if (res.data.ok) setEnquiries(res.data.enquiries);
-            })
-            .catch(() => console.error("Failed to fetch enquiries"));
     }, []);
+
+    // Fetch enquiries when filter changes
+    useEffect(() => {
+        fetchEnquiries();
+    }, [statusFilter]);
+
+    async function fetchEnquiries() {
+        try {
+            const res = await api.get(`/enquiries/agent/${agentId}`, {
+                params: { status: statusFilter },
+            });
+            if (res.data.ok) setEnquiries(res.data.enquiries);
+        } catch (err) {
+            console.error("Failed to fetch enquiries");
+        }
+    }
 
     // Delete property
     function handleDelete(id) {
@@ -169,10 +181,10 @@ export default function PropertiesPage() {
                                 <td>
                                     <span
                                         className={`badge ${p.status === "Active"
-                                                ? "badge-success"
-                                                : p.status === "Pending"
-                                                    ? "badge-warning"
-                                                    : "badge-muted"
+                                            ? "badge-success"
+                                            : p.status === "Pending"
+                                                ? "badge-warning"
+                                                : "badge-muted"
                                             }`}
                                     >
                                         {p.status}
@@ -181,17 +193,13 @@ export default function PropertiesPage() {
                                 <td className="flex gap-8">
                                     <button
                                         className="btn btn-outline"
-                                        onClick={() =>
-                                            navigate(`/properties/${p.id}`)
-                                        }
+                                        onClick={() => navigate(`/properties/${p.id}`)}
                                     >
                                         View
                                     </button>
                                     <button
                                         className="btn btn-outline"
-                                        onClick={() =>
-                                            navigate(`/properties/edit/${p.id}`)
-                                        }
+                                        onClick={() => navigate(`/properties/edit/${p.id}`)}
                                     >
                                         Edit
                                     </button>
@@ -218,68 +226,94 @@ export default function PropertiesPage() {
             {/* Buyer Enquiries */}
             <div className="card mt-24">
                 <div className="card-body">
-                    <h3 className="text-lg font-bold mb-4">Buyer Enquiries</h3>
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold">Buyer Enquiries</h3>
+
+                        {/* 🔽 Simple Filter Dropdown */}
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white shadow-sm hover:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
+                        >
+                            <option value="All">All</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Contacted">Contacted</option>
+                            <option value="Closed">Closed</option>
+                        </select>
+                    </div>
 
                     {enquiries.length === 0 ? (
                         <p className="text-gray-600">No enquiries received yet.</p>
                     ) : (
-                        <div className="table-wrap">
-                            <table className="table">
-                                <thead>
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>Buyer</th>
-                                        <th>Contact</th>
-                                        <th>Property</th>
-                                        <th>Message</th>
-                                        <th>Status</th>
-                                        <th>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {enquiries.map((e) => (
-                                        <tr key={e.id}>
-                                            <td>{e.created_at}</td>
-                                            <td>{e.buyer_name}</td>
-                                            <td>
-                                                <div>{e.buyer_email}</div>
-                                                <div className="text-sm text-gray-500">
-                                                    {e.buyer_phone}
-                                                </div>
-                                            </td>
-                                            <td>{e.property_title}</td>
-                                            <td>{e.message}</td>
-                                            <td>
-                                                <span
-                                                    className={`badge ${e.status === "Pending"
+                        <>
+                            <div className="table-wrap">
+                                <table className="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Buyer</th>
+                                            <th>Contact</th>
+                                            <th>Property</th>
+                                            <th>Message</th>
+                                            <th>Status</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(showAll ? enquiries : enquiries.slice(0, 5)).map((e) => (
+                                            <tr key={e.id}>
+                                                <td>{e.created_at}</td>
+                                                <td>{e.buyer_name}</td>
+                                                <td>
+                                                    <div>{e.buyer_email}</div>
+                                                    <div className="text-sm text-gray-500">
+                                                        {e.buyer_phone}
+                                                    </div>
+                                                </td>
+                                                <td>{e.property_title}</td>
+                                                <td>{e.message}</td>
+                                                <td>
+                                                    <span
+                                                        className={`badge ${e.status === "Pending"
                                                             ? "badge-warning"
                                                             : e.status === "Contacted"
                                                                 ? "badge-success"
                                                                 : "badge-muted"
-                                                        }`}
-                                                >
-                                                    {e.status}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                {e.status !== "Closed" && (
-                                                    <button
-                                                        className="btn btn-outline text-xs"
-                                                        onClick={() =>
-                                                            handleStatusUpdate(e)
-                                                        }
+                                                            }`}
                                                     >
-                                                        {e.status === "Pending"
-                                                            ? "Mark Contacted"
-                                                            : "Mark Closed"}
-                                                    </button>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                                        {e.status}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    {e.status !== "Closed" && (
+                                                        <button
+                                                            className="btn btn-outline text-xs"
+                                                            onClick={() => handleStatusUpdate(e)}
+                                                        >
+                                                            {e.status === "Pending"
+                                                                ? "Mark Contacted"
+                                                                : "Mark Closed"}
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* View More / View Less Button */}
+                            {enquiries.length > 5 && (
+                                <div className="flex justify-center mt-4">
+                                    <button
+                                        onClick={() => setShowAll(!showAll)}
+                                        className="btn btn-outline"
+                                    >
+                                        {showAll ? "View Less" : "View More"}
+                                    </button>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </div>

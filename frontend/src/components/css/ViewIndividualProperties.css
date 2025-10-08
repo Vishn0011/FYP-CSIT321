@@ -299,9 +299,372 @@
         opacity: 0;
         transform: translateY(10px);
     }
+    /* ---------- THEME ---------- */
+    :root {
+        --primary: #00674f;
+        --primary-600: #1b8a5a;
+        --primary-100: #e8f8ef;
+        --bg: #f6f8f7;
+        --surface: #ffffff;
+        --text: #1f2937;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.06);
+        --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.08);
+    }
+    /* ---------- PAGE SHELL ---------- */
+    .property-details-page {
+        max-width: 1180px;
+        margin: 40px auto 100px;
+        padding: 0 20px;
+        color: var(--text);
+        background: var(--bg);
+        animation: fadeIn 0.4s ease-in;
+    }
+    /* ---------- BREADCRUMB ---------- */
+    .breadcrumb {
+        font-size: 14px;
+        color: var(--muted);
+        margin-bottom: 16px;
+    }
+
+    .breadcrumb strong {
+        color: var(--primary-600);
+        font-weight: 700;
+    }
+    /* ---------- GRID LAYOUT ---------- */
+    .property-details-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 32px;
+        align-items: stretch;
+    }
+    /* ---------- GALLERY WRAPPER ---------- */
+    .photo-gallery-wrapper {
+        position: relative;
+        background: var(--surface);
+        border-radius: 18px;
+        box-shadow: var(--shadow-md);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    /* ---------- SCROLLABLE GALLERY ---------- */
+    .photo-gallery {
+        display: flex;
+        overflow-x: auto;
+        gap: 14px;
+        scroll-snap-type: x mandatory;
+        scroll-behavior: smooth;
+        padding: 12px;
+    }
+
+    .photo-gallery::-webkit-scrollbar {
+        height: 6px;
+    }
+
+    .photo-gallery::-webkit-scrollbar-thumb {
+        background: var(--primary-100);
+        border-radius: 4px;
+    }
+
+    .photo-gallery::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .photo-gallery img {
+        flex-shrink: 0;
+        width: 100%;
+        max-width: 400px;
+        aspect-ratio: 16/10;
+        object-fit: cover;
+        border-radius: 12px;
+        scroll-snap-align: start;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .photo-gallery img:hover {
+        transform: scale(1.04);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+    }
+    /* ---------- GALLERY ARROWS ---------- */
+    .gallery-nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: var(--shadow-sm);
+        transition: all 0.25s ease;
+        z-index: 5;
+    }
+
+    .gallery-nav:hover {
+        background: var(--primary-100);
+        transform: translateY(-50%) scale(1.1);
+    }
+
+    .gallery-nav.left {
+        left: 12px;
+    }
+
+    .gallery-nav.right {
+        right: 12px;
+    }
+    /* ---------- PROPERTY INFO CARD ---------- */
+    .property-info.card {
+        background: var(--surface);
+        border-radius: 18px;
+        box-shadow: var(--shadow-md);
+        padding: 30px 32px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        height: 100%;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .property-info.card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+    }
+    /* ---------- PRICE + LOCATION ---------- */
+    .property-info .price {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--primary-600);
+        margin-bottom: 8px;
+    }
+
+    .property-info .location {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 15px;
+        margin-bottom: 10px;
+        color: var(--text);
+    }
+
+    .property-info .short-desc {
+        font-size: 15px;
+        color: var(--muted);
+        line-height: 1.6;
+        margin-bottom: 18px;
+    }
+    /* ---------- AGENT INFO ---------- */
+    .agent-info {
+        margin-bottom: 16px;
+        padding: 10px 14px;
+        background: var(--primary-100);
+        border-radius: 10px;
+        border: 1px solid var(--border);
+    }
+
+    .agent-info .verified-badge {
+        font-size: 12px;
+        background: var(--primary);
+        color: #fff;
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-weight: 600;
+    }
+
+    .agent-activity {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 4px;
+    }
+    /* ---------- PROPERTY DETAILS ---------- */
+    .property-info .details-title {
+        font-weight: 700;
+        color: var(--text);
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 6px;
+        margin: 20px 0 10px;
+        font-size: 16px;
+        letter-spacing: 0.2px;
+    }
+
+    .property-info .details-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        color: var(--text);
+        font-size: 15px;
+        line-height: 1.7;
+    }
+
+    .property-info .details-list li {
+        margin: 4px 0;
+    }
+    /* ---------- BUTTON GROUP ---------- */
+    .property-info .actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 24px;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px 18px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: #fff;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-600);
+    }
+
+    .btn-outline {
+        background: #fff;
+        color: var(--primary-600);
+        border: 1px solid var(--primary);
+    }
+
+    .btn-outline:hover {
+        background: var(--primary-100);
+    }
+    /* ---------- RESPONSIVE ---------- */
+    @media (max-width: 900px) {
+        .property-details-grid
+
+{
+    grid-template-columns: 1fr;
+    gap: 24px;
+}
+
+.photo-gallery img {
+    height: 240px;
+    max-width: 100%;
+}
+
+.property-info.card {
+    padding: 22px;
+    height: auto;
+}
+
+}
+
+/* ---------- MODAL ---------- */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+}
+
+.modal-box {
+    background: #fff;
+    border-radius: 14px;
+    width: 420px;
+    padding: 26px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 14px;
+}
+
+.modal-box input,
+.modal-box textarea {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* ---------- FADE ANIMATION ---------- */
+.fade-in {
+    animation: fadeIn 0.4s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
 
     to {
         opacity: 1;
         transform: translateY(0);
     }
 }
+
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.agent-info,
+.agent-modal-info {
+    background: var(--primary-100);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+
+    .agent-info .verified-badge,
+    .agent-modal-info .verified-badge {
+        font-size: 12px;
+        background: var(--primary);
+        color: #fff;
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-weight: 600;
+    }
+
+.agent-activity {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+}
+
+.agent-activity-bar {
+    width: 100%;
+    height: 6px;
+    border-radius: 4px;
+    background: #e5e7eb;
+    margin-top: 6px;
+}
+
+.agent-activity-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--primary);
+    transition: width 0.4s ease;
+}
+

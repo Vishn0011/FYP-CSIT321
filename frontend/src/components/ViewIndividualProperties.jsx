@@ -76,6 +76,14 @@ export default function PropertyDetails() {
 
     const photos = property.photos ? JSON.parse(property.photos) : [];
 
+    // Helper for responsive bar width
+    const getActivityWidth = (activity) => {
+        if (activity === "Highly responsive") return "100%";
+        if (activity === "Active this week") return "70%";
+        if (activity === "Occasionally active") return "40%";
+        return "20%";
+    };
+
     return (
         <div className="property-details-page fade-in">
             {/* Breadcrumb */}
@@ -124,6 +132,43 @@ export default function PropertyDetails() {
                         <p className="short-desc">
                             {property.description?.substring(0, 100)}...
                         </p>
+
+                        {/* --- Agent Info Section --- */}
+                        {property.agent && (
+                            <div className="agent-info">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-gray-800">
+                                        Agent: {property.agent.name}
+                                    </span>
+                                    {property.agent.verified && (
+                                        <span className="verified-badge">✔ Verified</span>
+                                    )}
+                                </div>
+                                <p className="agent-activity">
+                                    {property.agent.activity}
+                                    {property.agent.last_active && (
+                                        <span className="ml-1 text-gray-500">
+                                            (Last active:{" "}
+                                            {new Date(
+                                                property.agent.last_active
+                                            ).toLocaleString("en-SG", {
+                                                dateStyle: "medium",
+                                                timeStyle: "short",
+                                            })}
+                                            )
+                                        </span>
+                                    )}
+                                </p>
+                                <div className="agent-activity-bar">
+                                    <div
+                                        className="agent-activity-fill"
+                                        style={{
+                                            width: getActivityWidth(property.agent.activity),
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        )}
 
                         <h3 className="details-title">Property Details</h3>
                         <ul className="details-list">
@@ -202,6 +247,40 @@ export default function PropertyDetails() {
                         <h3 className="modal-title flex items-center gap-2">
                             <Mail className="w-5 h-5 text-emerald-700" /> Contact Agent
                         </h3>
+
+                        {/* --- Agent Info in Modal --- */}
+                        {property.agent && (
+                            <div className="agent-modal-info mb-4">
+                                <h4 className="font-semibold text-emerald-700 flex items-center gap-2">
+                                    <ShieldCheck className="w-4 h-4" />
+                                    Contacting {property.agent.name}{" "}
+                                    {property.agent.verified && (
+                                        <span className="verified-badge">✔ Verified</span>
+                                    )}
+                                </h4>
+                                <p className="text-sm text-gray-700">
+                                    {property.agent.activity}
+                                    {property.agent.last_active && (
+                                        <> — Last active{" "}
+                                            {new Date(
+                                                property.agent.last_active
+                                            ).toLocaleString("en-SG", {
+                                                dateStyle: "medium",
+                                                timeStyle: "short",
+                                            })}
+                                        </>
+                                    )}
+                                </p>
+                                <div className="agent-activity-bar mt-2">
+                                    <div
+                                        className="agent-activity-fill"
+                                        style={{
+                                            width: getActivityWidth(property.agent.activity),
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        )}
 
                         <label>Your Name</label>
                         <input

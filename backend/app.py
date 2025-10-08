@@ -10,7 +10,7 @@ from routes.users import users_bp
 import psycopg2
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
-
+from datetime import timezone, timedelta
 
 
 load_dotenv()
@@ -90,6 +90,14 @@ def login():
             INSERT INTO sessions(user_id, token, expires_at)
             VALUES (%s, %s, %s)
         """, [user["id"], token, exp])
+
+    if user["role"] == "agent":
+        with get_cursor() as cur:
+            cur.execute("""
+                UPDATE users
+                SET last_active = NOW()
+                WHERE id = %s
+            """, [user["id"]])
 
     # Convert expiry to SG time
     sg = pytz.timezone("Asia/Singapore")
@@ -431,21 +439,73 @@ def list_properties():
 #get individual property by id
 @app.get("/api/properties/<int:prop_id>")
 def get_property(prop_id):
+    # --- Fetch property + agent info in one query ---
     row = query_all(
         """
-        SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
-               size, location, latitude, longitude, photos, status,
-               furnishing, floor_level, tenure, amenities, floor_plan, video_url,
-               created_at, updated_at
-        FROM properties
-        WHERE id = %s
-    """,
+        SELECT p.id, p.agent_id, p.title, p.property_type, p.description, p.price,
+               p.bedrooms, p.bathrooms, p.size, p.location, p.latitude, p.longitude,
+               p.photos, p.status, p.furnishing, p.floor_level, p.tenure, p.amenities,
+               p.floor_plan, p.video_url, p.created_at, p.updated_at,
+               u.name AS agent_name, u.status AS agent_status, u.last_active
+        FROM properties p
+        LEFT JOIN users u ON p.agent_id = u.id
+        WHERE p.id = %s
+        """,
         [prop_id],
     )
+
     if not row:
         return jsonify({"error": "Property not found"}), 404
-    return jsonify(row[0])
 
+    data = row[0]
+
+    # --- Compute agent responsiveness ---
+    from datetime import datetime, timezone
+
+    activity = "Inactive"
+    last_active_iso = None
+
+    if data.get("last_active"):
+        last_active = data["last_active"]
+
+        # Convert string, datetime if needed
+        if isinstance(last_active, str):
+            try:
+                last_active = datetime.fromisoformat(last_active)
+            except Exception:
+                pass  # silently skip if format unexpected
+
+        # Normalize to UTC if it's naive
+        if isinstance(last_active, datetime) and last_active.tzinfo is None:
+            last_active = last_active.replace(tzinfo=timezone.utc)
+
+        diff_days = (datetime.now(timezone.utc) - last_active).days
+        last_active_iso = last_active.isoformat()
+
+        if diff_days <= 1:
+            activity = "Highly responsive"
+        elif diff_days <= 7:
+            activity = "Active this week"
+        else:
+            activity = "Occasionally active"
+
+    # --- Build agent subobject ---
+    agent_info = {
+        "id": data.get("agent_id"),
+        "name": data.get("agent_name"),
+        "status": data.get("agent_status"),
+        "verified": str(data.get("agent_status")).lower() == "approved",
+        "activity": activity,
+        "last_active": last_active_iso,
+    }
+
+    # --- Merge back into response ---
+    data["agent"] = agent_info
+    data.pop("agent_name", None)
+    data.pop("agent_status", None)
+    data.pop("last_active", None)
+
+    return jsonify(data)
 
 #add property
 # --- Add Property ---
@@ -828,24 +888,36 @@ def create_enquiry():
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
-#get enquiries for agent
+# get enquiries for agent and fliter enquiries by status
 @app.get("/api/enquiries/agent/<int:agent_id>")
 def get_agent_enquiries(agent_id):
     try:
+        # Get optional status filter (e.g., /api/enquiries/agent/5?status=Pending)
+        status_filter = request.args.get("status")
+
         with get_conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
+            # Base query
+            base_query = """
                 SELECT e.id, e.property_id, p.title AS property_title,
                        e.buyer_name, e.buyer_email, e.buyer_phone,
                        e.message, e.status, e.created_at
                 FROM enquiries e
                 JOIN properties p ON e.property_id = p.id
                 WHERE e.agent_id = %s
-                ORDER BY e.created_at DESC;
-                """,
-                (agent_id,),
-            )
+            """
+            params = [agent_id]
+
+            # Apply filter only if provided and not "All"
+            if status_filter and status_filter.lower() != "all":
+                base_query += " AND e.status = %s"
+                params.append(status_filter)
+
+            base_query += " ORDER BY e.created_at DESC;"
+            cur.execute(base_query, params)
             rows = cur.fetchall()
+
+        # Convert timestamps to Singapore time (UTC+8)
+        SGT = timezone(timedelta(hours=8))
 
         enquiries = [
             {
@@ -857,7 +929,10 @@ def get_agent_enquiries(agent_id):
                 "buyer_phone": r["buyer_phone"],
                 "message": r["message"],
                 "status": r["status"],
-                "created_at": r["created_at"].strftime("%Y-%m-%d %H:%M:%S"),
+                "created_at": r["created_at"]
+                    .replace(tzinfo=timezone.utc)
+                    .astimezone(SGT)
+                    .strftime("%Y-%m-%d %H:%M:%S"),
             }
             for r in rows
         ]
@@ -901,8 +976,6 @@ def update_enquiry_status(enquiry_id):
         import traceback
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
-
-
 
 
 if __name__ == "__main__":
