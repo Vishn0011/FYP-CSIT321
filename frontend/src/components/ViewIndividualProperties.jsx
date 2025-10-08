@@ -11,6 +11,12 @@ import {
     ShieldCheck,
     ChevronLeft,
     ChevronRight,
+    Share2,
+    Facebook,
+    Twitter,
+    Instagram,
+    MessageCircle,
+    Send,
 } from "lucide-react";
 import {
     LineChart,
@@ -82,6 +88,60 @@ export default function PropertyDetails() {
         if (activity === "Active this week") return "70%";
         if (activity === "Occasionally active") return "40%";
         return "20%";
+    };
+
+    // --- Share Listing Function ---
+    const handleShare = (platform) => {
+        const url = window.location.href;
+        const text = `Check out this property on Aspect Real Estate: ${property.title} at ${property.location}`;
+        let shareUrl = "";
+
+        switch (platform) {
+            case "facebook":
+                shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+                    url
+                )}`;
+                break;
+            case "twitter":
+                shareUrl = `https://twitter.com/intent/tweet?url=${encodeURIComponent(
+                    url
+                )}&text=${encodeURIComponent(text)}`;
+                break;
+            case "whatsapp":
+                shareUrl = `https://wa.me/?text=${encodeURIComponent(text + " " + url)}`;
+                break;
+            case "telegram":
+                shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
+                    url
+                )}&text=${encodeURIComponent(text)}`;
+                break;
+            case "instagram":
+                Swal.fire({
+                    icon: "info",
+                    title: "Instagram Sharing",
+                    text: "Instagram does not support direct URL sharing. You can copy the link instead.",
+                    showCancelButton: true,
+                    confirmButtonText: "Copy Link",
+                    cancelButtonText: "Cancel",
+                    confirmButtonColor: "#00674f",
+                }).then((res) => {
+                    if (res.isConfirmed) {
+                        navigator.clipboard.writeText(url);
+                        Swal.fire({
+                            icon: "success",
+                            title: "Link Copied!",
+                            text: "You can paste it directly into your Instagram bio or story.",
+                            timer: 2000,
+                            showConfirmButton: false,
+                        });
+                    }
+                });
+                return;
+            default:
+                return;
+        }
+
+        window.open(shareUrl, "_blank");
     };
 
     return (
@@ -178,6 +238,50 @@ export default function PropertyDetails() {
                             <li><strong>Status:</strong> {property.status}</li>
                             <li><strong>Type:</strong> {property.property_type}</li>
                         </ul>
+
+                        {/* --- Share Listing Section --- */}
+                        <div className="share-listing mt-6">
+                            <h4 className="text-gray-700 font-semibold flex items-center gap-2 mb-2">
+                                <Share2 className="w-4 h-4 text-emerald-700" /> Share this Listing
+                            </h4>
+                            <div className="flex gap-3 flex-wrap">
+                                <button
+                                    onClick={() => handleShare("facebook")}
+                                    className="share-btn facebook"
+                                    title="Share on Facebook"
+                                >
+                                    <Facebook className="w-4 h-4" /> Facebook
+                                </button>
+                                <button
+                                    onClick={() => handleShare("twitter")}
+                                    className="share-btn twitter"
+                                    title="Share on Twitter"
+                                >
+                                    <Twitter className="w-4 h-4" /> Twitter
+                                </button>
+                                <button
+                                    onClick={() => handleShare("whatsapp")}
+                                    className="share-btn whatsapp"
+                                    title="Share on WhatsApp"
+                                >
+                                    <MessageCircle className="w-4 h-4" /> WhatsApp
+                                </button>
+                                <button
+                                    onClick={() => handleShare("telegram")}
+                                    className="share-btn telegram"
+                                    title="Share on Telegram"
+                                >
+                                    <Send className="w-4 h-4" /> Telegram
+                                </button>
+                                <button
+                                    onClick={() => handleShare("instagram")}
+                                    className="share-btn instagram"
+                                    title="Share on Instagram"
+                                >
+                                    <Instagram className="w-4 h-4" /> Instagram
+                                </button>
+                            </div>
+                        </div>
 
                         {userRole === "homeowner" && (
                             <div className="actions">
