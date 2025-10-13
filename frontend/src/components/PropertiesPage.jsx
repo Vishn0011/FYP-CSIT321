@@ -3,6 +3,8 @@ import Swal from "sweetalert2";
 import axios from "axios";
 import "./css/PropertiesPage.css";
 import { Link, useNavigate } from "react-router-dom";
+import ChatModal from "../components/ChatModel";
+
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api",
@@ -18,6 +20,8 @@ export default function PropertiesPage() {
     const [enquiries, setEnquiries] = useState([]);
     const [showAll, setShowAll] = useState(false);
     const [statusFilter, setStatusFilter] = useState("All");
+    const [activeChat, setActiveChat] = useState(null);
+
 
     // Fetch properties + enquiries
     useEffect(() => {
@@ -72,16 +76,15 @@ export default function PropertiesPage() {
         });
     }
 
-    // Update enquiry status with SweetAlert confirmation
+    // === Update enquiry status & open chat if marked "Contacted" ===
     async function handleStatusUpdate(enquiry) {
-        const nextStatus =
-            enquiry.status === "Pending" ? "Contacted" : "Closed";
+        const nextStatus = enquiry.status === "Pending" ? "Contacted" : "Closed";
 
         Swal.fire({
             title: `Mark as ${nextStatus}?`,
             text:
                 nextStatus === "Contacted"
-                    ? "This will mark the enquiry as contacted."
+                    ? "This will mark the enquiry as contacted, notify the buyer by email, and open a chat window."
                     : "This will mark the enquiry as closed.",
             icon: "question",
             showCancelButton: true,
@@ -108,8 +111,15 @@ export default function PropertiesPage() {
                     Swal.fire({
                         icon: "success",
                         title: "Status Updated",
-                        text: `Enquiry marked as ${nextStatus}.`,
+                        text:
+                            nextStatus === "Contacted"
+                                ? "Enquiry Marked as Contacted. You can now start chatting with the buyer."
+                                : "Enquiry marked as Closed.",
                         confirmButtonColor: "#00674f",
+                    }).then(() => {
+                        if (nextStatus === "Contacted") {
+                            setActiveChat(enquiry); // 🟢 open chat immediately
+                        }
                     });
                 } else {
                     Swal.fire({
@@ -311,8 +321,16 @@ export default function PropertiesPage() {
                                     >
                                         {showAll ? "View Less" : "View More"}
                                     </button>
-                                </div>
-                            )}
+                                    </div>
+                               //chat modal
+                                )}
+                                {activeChat && (
+                                    <ChatModal
+                                        enquiry={activeChat}
+                                        user={user}
+                                        onClose={() => setActiveChat(null)}
+                                    />
+                                )}
                         </>
                     )}
                 </div>

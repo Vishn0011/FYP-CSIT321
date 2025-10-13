@@ -1,4 +1,4 @@
-import os, re
+﻿import os, re
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -11,6 +11,11 @@ import psycopg2
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
 from datetime import timezone, timedelta
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from psycopg2.extras import RealDictCursor
+
 
 
 load_dotenv()
@@ -944,7 +949,7 @@ def get_agent_enquiries(agent_id):
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
-#update enquiry status
+# ---Update Enquiry Status---
 @app.put("/api/enquiries/<int:enquiry_id>/status")
 def update_enquiry_status(enquiry_id):
     body = request.get_json(force=True) or {}
@@ -960,7 +965,7 @@ def update_enquiry_status(enquiry_id):
                 UPDATE enquiries
                 SET status = %s
                 WHERE id = %s
-                RETURNING id, status;
+                RETURNING id, property_id, agent_id, buyer_id, status;
                 """,
                 (new_status, enquiry_id),
             )
@@ -970,12 +975,258 @@ def update_enquiry_status(enquiry_id):
         if not row:
             return jsonify({"ok": False, "error": "Enquiry not found"}), 404
 
-        return jsonify({"ok": True, "enquiry": {"id": row["id"], "status": row["status"]}}), 200
+        enquiry = {
+            "id": row["id"],
+            "property_id": row["property_id"],
+            "agent_id": row["agent_id"],
+            "buyer_id": row["buyer_id"],
+            "status": row["status"],
+        }
+
+        return jsonify({"ok": True, "enquiry": enquiry}), 200
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
+
+# ---Get Chat Messages---
+@app.get("/api/chat/<int:enquiry_id>")
+def get_chat_messages(enquiry_id):
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, enquiry_id, sender_id, message, created_at
+                FROM chat_messages
+                WHERE enquiry_id = %s
+                ORDER BY created_at ASC;
+                """,
+                (enquiry_id,),
+            )
+            rows = cur.fetchall()
+
+        messages = [
+            {
+                "id": r["id"],
+                "enquiry_id": r["enquiry_id"],
+                "sender_id": r["sender_id"],
+                "message": r["message"],
+                "created_at": r["created_at"].strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            for r in rows
+        ]
+
+        return jsonify({"ok": True, "messages": messages}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+# ---Add Chat Message---
+@app.post("/api/chat")
+def add_chat_message():
+    try:
+        data = request.get_json()
+        enquiry_id = data.get("enquiry_id")
+        sender_id = data.get("sender_id")
+        message = data.get("message")
+
+        if not enquiry_id or not sender_id or not message:
+            return jsonify({"ok": False, "error": "Missing required fields"}), 400
+
+        with get_conn() as conn, conn.cursor() as cur:
+            # === Insert chat message ===
+            cur.execute(
+                """
+                INSERT INTO chat_messages (enquiry_id, sender_id, message, created_at)
+                VALUES (%s, %s, %s, NOW())
+                RETURNING id;
+                """,
+                (enquiry_id, sender_id, message),
+            )
+            new_id = cur.fetchone()["id"]
+            conn.commit()
+
+        # === Fetch context info ===
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 
+                    e.property_id,
+                    e.agent_id,
+                    e.buyer_id,
+                    a.name  AS agent_name,
+                    a.email AS agent_email,
+                    b.name  AS buyer_name,
+                    b.email AS buyer_email,
+                    p.title AS property_title
+                FROM enquiries e
+                JOIN users a ON e.agent_id = a.id
+                JOIN users b ON e.buyer_id = b.id
+                JOIN properties p ON e.property_id = p.id
+                WHERE e.id = %s;
+                """,
+                (enquiry_id,),
+            )
+            info = cur.fetchone()
+
+        # === Check if this is agent's first message ===
+        should_send_email = False
+        if info and info["agent_id"] == sender_id:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS msg_count
+                    FROM chat_messages
+                    WHERE enquiry_id = %s AND sender_id = %s;
+                    """,
+                    (enquiry_id, sender_id),
+                )
+                count_row = cur.fetchone()
+                msg_count = count_row["msg_count"]
+
+            if msg_count == 1:
+                should_send_email = True
+
+        # === Send email if agent's first message ===
+        if should_send_email:
+            print(f"📧 Sending first message email to {info['buyer_email']}...")
+            send_chat_email_to_buyer(
+                buyer_name=info["buyer_name"],
+                buyer_email=info["buyer_email"],
+                agent_name=info["agent_name"],
+                property_title=info["property_title"],
+                message=message,
+            )
+
+        return jsonify({"ok": True, "id": new_id}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+ #get enquiry tied to buyer
+@app.get("/api/enquiries/buyer/<int:buyer_id>")
+def get_buyer_enquiries(buyer_id):
+    try:
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT 
+                        e.id AS enquiry_id,
+                        e.property_id,
+                        e.status,
+                        e.message,
+                        e.created_at,
+                        p.title AS property_title,
+                        p.location,
+                        p.price,
+                        p.bedrooms,
+                        u.name AS agent_name,
+                        u.email AS agent_email
+                    FROM enquiries e
+                    JOIN properties p ON e.property_id = p.id
+                    JOIN users u ON e.agent_id = u.id
+                        AND LOWER(u.role) = 'agent'
+                    WHERE e.buyer_id = %s
+                    ORDER BY e.created_at DESC;
+                    """,
+                    (buyer_id,),
+                )
+                rows = cur.fetchall()
+
+        return jsonify({"ok": True, "count": len(rows), "enquiries": rows})
+
+    except Exception as e:
+        print("❌ Error fetching buyer enquiries:", e)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+def send_chat_email_to_buyer(buyer_name, buyer_email, agent_name, property_title, message):
+    sender_email = "lorryleeziyun@gmail.com"
+    subject = f"Agent {agent_name} has sent you a message about {property_title}"
+
+    # === HTML template ===
+    html_body = f"""
+    <html>
+      <body style="margin:0; padding:0; font-family: 'Segoe UI', Arial, sans-serif; background-color:#f4f4f4;">
+        <div style="max-width:600px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,0.05);">
+          <!-- Header -->
+          <div style="background-color:#00674f;padding:20px 30px;text-align:center;">
+            <img src="https://i.ibb.co/hXrL5WL/aspect-logo.png" alt="Aspect Real Estate" style="max-height:50px;"/>
+          </div>
+
+          <!-- Content -->
+          <div style="padding:30px 40px;color:#333333;">
+            <h2 style="color:#00674f;">New Message from {agent_name}</h2>
+            <p style="font-size:15px;line-height:1.6;color:#444444;">
+              Hi <b>{buyer_name}</b>,
+              <br><br>
+              Agent <b>{agent_name}</b> has sent you a new message regarding your enquiry for:
+              <br>
+              <b>"{property_title}"</b>
+            </p>
+
+            <div style="background:#f9faf9;border-left:4px solid #00674f;padding:15px 20px;margin:25px 0;border-radius:6px;">
+              <p style="font-size:15px;line-height:1.6;margin:0;color:#333;">
+                {message}
+              </p>
+            </div>
+
+            <p style="font-size:15px;line-height:1.6;color:#444444;">
+              You can reply to this message directly in your Aspect Real Estate dashboard.
+            </p>
+
+            <div style="text-align:center;margin-top:30px;">
+              <a href="https://aspect-realestate.com/login"
+                 style="background-color:#00674f;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-size:15px;display:inline-block;">
+                View Message
+              </a>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div style="background-color:#f9faf9;text-align:center;padding:15px 20px;font-size:13px;color:#777777;">
+            <p>© 2025 Aspect Real Estate. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+
+    # === Plain text fallback ===
+    plain_body = f"""
+    Hi {buyer_name},
+
+    Agent {agent_name} has sent you a message about "{property_title}".
+
+    Message:
+    {message}
+
+    You can reply from your Aspect Real Estate dashboard:
+    https://aspect-realestate.com/login
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = sender_email
+    msg["To"] = buyer_email
+    msg.attach(MIMEText(plain_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login("lorryleeziyun@gmail.com", "LOrr@12345!!") 
+            server.sendmail(sender_email, buyer_email, msg.as_string())
+
+        print(f"chat email sent to {buyer_email}")
+    except Exception as e:
+        print(f"Failed to send chat email: {e}")
+
 
 
 if __name__ == "__main__":
