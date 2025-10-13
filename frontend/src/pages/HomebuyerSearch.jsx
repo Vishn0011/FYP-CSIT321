@@ -18,6 +18,14 @@ export default function HomebuyerSearch() {
 
     const user = JSON.parse(localStorage.getItem("user") || "{}");
 
+    // 🟢 Ensure token persists on refresh
+    useEffect(() => {
+        const savedToken = localStorage.getItem("token");
+        if (savedToken) {
+            api.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
+        }
+    }, []);
+
     // === Fetch properties ===
     async function search() {
         setMsg("");
@@ -58,7 +66,6 @@ export default function HomebuyerSearch() {
             console.error("Failed to fetch enquiries", err);
         }
     }
-
 
     useEffect(() => {
         search();

@@ -1,43 +1,42 @@
-// src/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from "react";
+import api from "./api";
 
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
+    const [token, setToken] = useState(null);
+    const [loading, setLoading] = useState(true); // Add this
 
     useEffect(() => {
-        const storedUser = localStorage.getItem("user");
-        if (storedUser && storedUser !== "undefined" && storedUser !== "null") {
-            try {
-                setUser(JSON.parse(storedUser));
-            } catch (err) {
-                console.error("Invalid user in localStorage:", storedUser, err);
-                localStorage.removeItem("user");
-            }
+        const savedUser = localStorage.getItem("user");
+        const savedToken = localStorage.getItem("token");
+        if (savedUser && savedToken) {
+            setUser(JSON.parse(savedUser));
+            setToken(savedToken);
+            api.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
         }
+        setLoading(false); // Done checking
     }, []);
 
-    const login = (user, token) => {
-        if (user) {
-            localStorage.setItem("user", JSON.stringify(user));
-            setUser(user);
-        }
-        if (token) {
-            localStorage.setItem("token", token);
-        } else {
-            localStorage.removeItem("token"); // don’t store "undefined"
-        }
+    const login = (userData, tokenData) => {
+        setUser(userData);
+        setToken(tokenData);
+        localStorage.setItem("user", JSON.stringify(userData));
+        localStorage.setItem("token", tokenData);
+        api.defaults.headers.common["Authorization"] = `Bearer ${tokenData}`;
     };
 
     const logout = () => {
+        setUser(null);
+        setToken(null);
         localStorage.removeItem("user");
         localStorage.removeItem("token");
-        setUser(null);
+        delete api.defaults.headers.common["Authorization"];
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, logout }}>
+        <AuthContext.Provider value={{ user, token, loading, login, logout }}>
             {children}
         </AuthContext.Provider>
     );
