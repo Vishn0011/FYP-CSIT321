@@ -10,7 +10,7 @@ import ViewIndividualPropertiesPage from "./components/ViewIndividualProperties"
 import EditIndividualPropertiesPage from "./components/UpdateProperties";
 import AdminUsers from "./pages/AdminUsers";
 import "./index.css";
-import SignUp from "./components/SignUp";
+import SignUp from "./pages/SignUp";
 import Unauthorized from "./pages/Unauthorized";
 import HomePage from "./pages/HomePage"
 import Nav from "./components/Nav";

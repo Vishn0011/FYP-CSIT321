@@ -7,6 +7,12 @@ const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
 });
 
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token"); // or wherever you store it
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 export default function AdminDashboard() {
     const navigate = useNavigate();
     const [stats, setStats] = useState({ total: 0, recent: [] });
