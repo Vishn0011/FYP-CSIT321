@@ -201,14 +201,14 @@ export default function App() {
                             </RequireAgent>
                         }
                     />
-                    <Route
-                        path="/properties/:id"
-                        element={
-                            <RequireAdmin>
-                                <ViewIndividualPropertiesPage />
-                            </RequireAdmin>
-                        }
-                    />
+                    {/*<Route*/}
+                    {/*    path="/properties/:id"*/}
+                    {/*    element={*/}
+                    {/*        <RequireAdmin>*/}
+                    {/*            <ViewIndividualPropertiesPage />*/}
+                    {/*        </RequireAdmin>*/}
+                    {/*    }*/}
+                    {/*/>*/}
                     <Route
                         path="/properties/edit/:id"
                         element={
