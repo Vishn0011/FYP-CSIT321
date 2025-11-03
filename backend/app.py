@@ -10,7 +10,7 @@ from routes.users import users_bp
 import psycopg2
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
-from datetime import timezone, timedelta
+from datetime import timezone, timedelta, datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -23,6 +23,8 @@ from sklearn.preprocessing import LabelEncoder
 from datetime import datetime
 from math import radians, cos, sin, asin, sqrt
 import requests
+from psycopg2 import OperationalError
+import stripe
 
 load_dotenv()
 app = Flask(__name__)
@@ -84,6 +86,11 @@ MODEL_FEATURES = [
 # Allow frontend (Vite dev server) to call this API in dev
 CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
 # CORS(app, supports_credentials=True, origins=[ALLOW_ORIGIN], methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "Authorization"], )
+
+# --- For Stripe (payment service)
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 def get_current_user():
     with get_cursor() as cur:
@@ -2162,6 +2169,244 @@ def analyze_geo():
     except Exception as e:
         print(f"[GeoAnalyzeError] {e}")
         return jsonify({"error": str(e)}), 400
+# --- Payment page ---
+# --- Payment page content (public)---
+@app.get("/api/public/payment-page")
+def get_payment_page_public():
+    with get_cursor() as cur:
+        cur.execute("SELECT id, title, subtitle, disclaimer, updated_at FROM payment_pages LIMIT 1;")
+        row = cur.fetchone()
+        if not row:
+            # bootstrap default row to avoid admin step blocking the page
+            cur.execute("""
+                INSERT INTO payment_pages (title, subtitle, disclaimer)
+                VALUES ('Complete Subscription','Choose a plan to continue','This is a demo payment page.')
+                RETURNING id, title, subtitle, disclaimer, updated_at;
+            """)
+            row = cur.fetchone()
+    return jsonify(row)
+
+# --- Plans con(public) ---
+@app.get("/api/public/plans")
+def get_plans_public():
+    rows = query_all("""
+        SELECT id, handle, name, description, currency, unit_amount, interval, is_active
+        FROM plans
+        WHERE is_active = TRUE
+        ORDER BY id ASC;
+    """)
+    return jsonify(rows)
+
+def _require_admin():
+    u = getattr(request, "user", None)
+    return bool(u and str(u.get("role","")).lower() == "admin")
+
+# --- Payment page Admin update page and manage plans---
+@app.put("/api/admin/payment-page")
+@auth_required
+def update_payment_page_admin():
+    if not _require_admin():
+        return jsonify({"error":"admin only"}), 403
+    data = request.get_json(force=True) or {}
+    with get_cursor() as cur:
+        cur.execute("SELECT id FROM payment_pages LIMIT 1;")
+        exists = cur.fetchone()
+        if exists:
+            cur.execute("""
+                UPDATE payment_pages
+                SET title = COALESCE(%s, title),
+                    subtitle = COALESCE(%s, subtitle),
+                    disclaimer = COALESCE(%s, disclaimer),
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id, title, subtitle, disclaimer, updated_at;
+            """, [data.get("title"), data.get("subtitle"), data.get("disclaimer"), exists["id"]])
+        else:
+            cur.execute("""
+                INSERT INTO payment_pages (title, subtitle, disclaimer)
+                VALUES (%s,%s,%s)
+                RETURNING id, title, subtitle, disclaimer, updated_at;
+            """, [data.get("title") or "Complete Subscription",
+                  data.get("subtitle") or "Choose a plan to continue",
+                  data.get("disclaimer") or ""] )
+        row = cur.fetchone()
+    return jsonify(row)
+
+@app.post("/api/admin/plans")
+@auth_required
+def create_plan_admin():
+    if not _require_admin():
+        return jsonify({"error":"admin only"}), 403
+    d = request.get_json(force=True) or {}
+    row = execute("""
+        INSERT INTO plans (handle, name, description, currency, unit_amount, interval, stripe_price_id, is_active)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,COALESCE(%s, TRUE))
+        RETURNING id, handle, name, description, currency, unit_amount, interval, stripe_price_id, is_active;
+    """, [
+        d["handle"], d["name"], d.get("description"),
+        d.get("currency","sgd"), int(d["unit_amount"]), d["interval"], d["stripe_price_id"],
+        d.get("is_active", True)
+    ], return_row=True)
+    return jsonify(row), 201
+
+@app.patch("/api/admin/plans/<int:pid>")
+@auth_required
+def update_plan_admin(pid):
+    if not _require_admin():
+        return jsonify({"error":"admin only"}), 403
+    d = request.get_json(force=True) or {}
+    fields, vals = [], []
+    for k in ["handle","name","description","currency","interval","stripe_price_id","is_active","unit_amount"]:
+        if k in d:
+            fields.append(f"{k} = %s")
+            vals.append(int(d[k]) if k=="unit_amount" else d[k])
+    if not fields:
+        return jsonify({"error":"no fields"}), 400
+    vals.append(pid)
+    sql = f"UPDATE plans SET {', '.join(fields)} WHERE id = %s RETURNING id, handle, name, description, currency, unit_amount, interval, stripe_price_id, is_active;"
+    row = execute(sql, vals, return_row=True)
+    if not row:
+        return jsonify({"error":"not found"}), 404
+    return jsonify(row)
+
+# --- Stripe (payment service) checkout ---
+@app.post("/api/payments/checkout")
+@auth_required
+def payments_checkout():
+    try:
+        body = request.get_json(force=True) or {}
+        plan_id = body.get("plan_id")
+
+        # --- diagnostics ---
+        print("[checkout] start", flush=True)
+        print("[checkout] user", request.user, flush=True)
+        print("[checkout] body", body, flush=True)
+        print("[checkout] stripe_key_prefix", (stripe.api_key or "")[:8], flush=True)
+        print("[checkout] FRONTEND_URL", FRONTEND_URL, flush=True)
+
+        # 1) validate inputs/config
+        if not isinstance(plan_id, int):
+            return jsonify({"error":"invalid_plan","detail":"plan_id must be integer"}), 400
+        if not stripe.api_key or not stripe.api_key.startswith(("sk_test_","sk_live_")):
+            return jsonify({"error":"stripe_config","detail":"STRIPE_SECRET_KEY missing/invalid"}), 500
+        if not FRONTEND_URL.startswith(("http://","https://")):
+            return jsonify({"error":"frontend_url","detail":f"bad FRONTEND_URL: {FRONTEND_URL}"}), 500
+
+        # 2) current signed-in user (set by @auth_required)
+        user_id = request.user["id"]
+        email   = request.user["email"]
+        role    = (request.user.get("role") or "homeowner").lower()
+
+        # 3) ensure stripe customer id
+        with get_cursor() as cur:
+            cur.execute("SELECT stripe_customer_id FROM users WHERE id=%s", [user_id])
+            row = cur.fetchone()
+            stripe_customer_id = row["stripe_customer_id"] if row else None
+        if not stripe_customer_id:
+            cust = stripe.Customer.create(email=email, metadata={"app_user_id": str(user_id), "role": role})
+            with get_cursor() as cur:
+                cur.execute("UPDATE users SET stripe_customer_id=%s WHERE id=%s", [cust.id, user_id])
+            stripe_customer_id = cust.id
+        print("[checkout] customer", stripe_customer_id, flush=True)
+
+        # 4) fetch plan
+        with get_cursor() as cur:
+            cur.execute("SELECT id, stripe_price_id, is_active FROM plans WHERE id=%s", [plan_id])
+            plan = cur.fetchone()
+        print("[checkout] plan", plan, flush=True)
+
+        if not plan:
+            return jsonify({"error":"plan_not_found","detail":f"id={plan_id}"}), 404
+        if not plan["is_active"]:
+            return jsonify({"error":"plan_inactive","detail":f"id={plan_id}"}), 400
+        if not plan["stripe_price_id"] or not plan["stripe_price_id"].startswith("price_"):
+            return jsonify({"error":"bad_price_id","detail":"missing/invalid stripe_price_id"}), 400
+
+        # 5) proactively verify the price exists in this Stripe mode
+        try:
+            _ = stripe.Price.retrieve(plan["stripe_price_id"])
+        except stripe.error.InvalidRequestError as e:
+            print("[checkout] price INVALID:", plan["stripe_price_id"], str(e), flush=True)
+            return jsonify({"error":"bad_price_id","detail":str(e)}), 400
+
+        # 6) create checkout session
+        success_url = f"{FRONTEND_URL}/payment/success?role={role}&session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url  = f"{FRONTEND_URL}/payment/cancel"
+
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            payment_method_types=["card"],
+            customer=stripe_customer_id,
+            line_items=[{"price": plan["stripe_price_id"], "quantity": 1}],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"user_id": str(user_id), "plan_id": str(plan["id"]), "role": role},
+        )
+        print("[checkout] session", session.id, flush=True)
+        return jsonify({"checkout_url": session.url})
+
+    # --- targeted error mapping (always JSON) ---
+    except stripe.error.AuthenticationError as e:
+        return jsonify({"error":"stripe_auth","detail":str(e)}), 500
+    except stripe.error.InvalidRequestError as e:
+        return jsonify({"error":"stripe_invalid_request","detail":str(e)}), 400
+    except stripe.error.StripeError as e:
+        return jsonify({"error":"stripe_generic","detail":str(e)}), 500
+    except OperationalError as e:
+        return jsonify({"error":"db_error","detail":str(e)}), 500
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error":"unexpected","detail":str(e)}), 500
+
+# --- Webhook for Stripe persistent subscription status ---
+@app.post("/api/webhooks/stripe")
+def stripe_webhook():
+    payload = request.data
+    sig = request.headers.get("Stripe-Signature")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+    t = event["type"]
+
+    # Checkout completed -> create/update subscription row
+    if t == "checkout.session.completed":
+        sess = event["data"]["object"]
+        sub_id = sess.get("subscription")
+        meta = sess.get("metadata", {}) or {}
+        user_id = int(meta.get("user_id", 0))
+        plan_id = int(meta.get("plan_id", 0)) if meta.get("plan_id") else None
+
+        if sub_id and user_id:
+            s = stripe.Subscription.retrieve(sub_id)
+            started_at = datetime.fromtimestamp(s.start_date, tz=timezone.utc) if getattr(s, "start_date", None) else None
+            period_end = datetime.fromtimestamp(s.current_period_end, tz=timezone.utc) if getattr(s, "current_period_end", None) else None
+
+            with get_cursor() as cur:
+                cur.execute("""
+                    INSERT INTO subscriptions (user_id, plan_id, stripe_subscription_id, stripe_status, started_at, current_period_end)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (stripe_subscription_id) DO UPDATE
+                    SET stripe_status=EXCLUDED.stripe_status,
+                        current_period_end=EXCLUDED.current_period_end
+                """, [user_id, plan_id, sub_id, s.status, started_at, period_end])
+
+    # Lifecycle updates
+    elif t in ("customer.subscription.updated", "customer.subscription.deleted"):
+        s = event["data"]["object"]
+        sub_id = s["id"]
+        status = s["status"]
+        period_end = s.get("current_period_end")
+        with get_cursor() as cur:
+            cur.execute("""
+                UPDATE subscriptions
+                SET stripe_status=%s,
+                    current_period_end=COALESCE(to_timestamp(%s), current_period_end)
+                WHERE stripe_subscription_id=%s
+            """, [status, period_end, sub_id])
+
+    return jsonify({"received": True})
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
