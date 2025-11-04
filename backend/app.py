@@ -984,7 +984,7 @@ def homebuyer_properties():
     bedrooms = request.args.get("bedrooms", type=int)
 
     query = """
-        SELECT id, title, price, bedrooms, location
+        SELECT id, title, price, bedrooms, location, photos
         FROM properties
         WHERE status = 'Active'
     """
@@ -1013,7 +1013,19 @@ def homebuyer_properties():
     query += " ORDER BY id DESC"
 
     rows = query_all(query, params)
+
+    # Decode photos JSON safely (so frontend gets array not string)
+    for r in rows:
+        if r.get("photos"):
+            try:
+                # convert string -> list if stored as JSON string
+                if isinstance(r["photos"], str):
+                    r["photos"] = json.loads(r["photos"])
+            except Exception:
+                r["photos"] = []
+
     return jsonify({"success": True, "items": rows})
+
 
 # ---Add Dropdown Option---
 @app.post("/api/options/<option_type>")

@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { MessageSquare, Heart, Search } from "lucide-react";
+import { MessageSquare, Heart, Search, MapPin, Home } from "lucide-react";
 import api from "../api";
 import ChatModal from "../components/ChatModel";
 
@@ -13,12 +13,11 @@ export default function HomebuyerSearch() {
     const [items, setItems] = useState([]);
     const [msg, setMsg] = useState("");
     const [loading, setLoading] = useState(false);
-    const [enquiries, setEnquiries] = useState([]); // buyer enquiries
-    const [activeChat, setActiveChat] = useState(null); // chat modal
+    const [enquiries, setEnquiries] = useState([]);
+    const [activeChat, setActiveChat] = useState(null);
 
     const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-    // 🟢 Ensure token persists on refresh
     useEffect(() => {
         const savedToken = localStorage.getItem("token");
         if (savedToken) {
@@ -26,7 +25,6 @@ export default function HomebuyerSearch() {
         }
     }, []);
 
-    // === Fetch properties ===
     async function search() {
         setMsg("");
         setLoading(true);
@@ -39,24 +37,19 @@ export default function HomebuyerSearch() {
                 ...(bedrooms && { bedrooms }),
             };
             const { data } = await api.get("/homeowner/properties", { params });
-            if (data?.success) {
-                setItems(data.items || []);
-            } else {
-                setMsg(data?.error || "Search failed");
-            }
-        } catch (e) {
+            if (data?.success) setItems(data.items || []);
+            else setMsg(data?.error || "Search failed");
+        } catch {
             setMsg("Network error");
         } finally {
             setLoading(false);
         }
     }
 
-    // === Fetch buyer enquiries ===
     async function fetchEnquiries() {
         try {
             const res = await api.get(`/enquiries/buyer/${user.id}`);
             if (res.data.ok) {
-                // Keep only enquiries where status = "Contacted"
                 const active = (res.data.enquiries || []).filter(
                     (e) => e.status && e.status.toLowerCase() === "contacted"
                 );
@@ -70,17 +63,14 @@ export default function HomebuyerSearch() {
     useEffect(() => {
         search();
         fetchEnquiries();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // === Get enquiry info for a property ===
     function getEnquiry(propertyId) {
         return enquiries.find(
             (e) => String(e.property_id).trim() === String(propertyId).trim()
         );
     }
 
-    // === Open chat if contacted ===
     function handleOpenChat(propertyId) {
         const enquiry = getEnquiry(propertyId);
         if (enquiry && enquiry.status === "Contacted") {
@@ -89,181 +79,184 @@ export default function HomebuyerSearch() {
     }
 
     return (
-        <div className="properties-page">
-            <h2 className="page-title">Homebuyer: Dashboard</h2>
+        <div className="homebuyer-page px-6 py-10 max-w-7xl mx-auto">
+            <h2 className="text-3xl font-semibold text-emerald-700 mb-8">
+                Find Your Dream Home
+            </h2>
 
-            {/* --- Search Form --- */}
-            <div className="card mb-12">
-                <div className="card-body">
-                    <div className="form-grid">
-                        <div>
-                            <label className="label">Search (title/location)</label>
-                            <input
-                                className="input"
-                                placeholder="e.g. Orchard condo"
-                                value={q}
-                                onChange={(e) => setQ(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="label">Location</label>
-                            <input
-                                className="input"
-                                placeholder="Exact location"
-                                value={location}
-                                onChange={(e) => setLocation(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="label">Min price</label>
-                            <input
-                                type="number"
-                                className="input"
-                                value={minPrice}
-                                onChange={(e) => setMinPrice(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="label">Max price</label>
-                            <input
-                                type="number"
-                                className="input"
-                                value={maxPrice}
-                                onChange={(e) => setMaxPrice(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="label">Bedrooms</label>
-                            <input
-                                type="number"
-                                className="input"
-                                value={bedrooms}
-                                onChange={(e) => setBedrooms(e.target.value)}
-                            />
-                        </div>
-                    </div>
+            {/* --- Search Filters --- */}
+            <div className="bg-white rounded-xl shadow-md p-6 mb-10">
+                <div className="grid md:grid-cols-5 gap-5">
+                    <input
+                        className="input border border-gray-300 rounded-lg p-2 w-full"
+                        placeholder="Search by title or area"
+                        value={q}
+                        onChange={(e) => setQ(e.target.value)}
+                    />
+                    <input
+                        className="input border border-gray-300 rounded-lg p-2 w-full"
+                        placeholder="Location"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                    />
+                    <input
+                        type="number"
+                        className="input border border-gray-300 rounded-lg p-2 w-full"
+                        placeholder="Min Price"
+                        value={minPrice}
+                        onChange={(e) => setMinPrice(e.target.value)}
+                    />
+                    <input
+                        type="number"
+                        className="input border border-gray-300 rounded-lg p-2 w-full"
+                        placeholder="Max Price"
+                        value={maxPrice}
+                        onChange={(e) => setMaxPrice(e.target.value)}
+                    />
+                    <input
+                        type="number"
+                        className="input border border-gray-300 rounded-lg p-2 w-full"
+                        placeholder="Bedrooms"
+                        value={bedrooms}
+                        onChange={(e) => setBedrooms(e.target.value)}
+                    />
+                </div>
 
-                    <div className="mt-16 flex justify-end">
-                        <button
-                            onClick={search}
-                            disabled={loading}
-                            className="btn btn-primary flex items-center gap-2"
-                        >
-                            <Search size={16} />
-                            {loading ? "Searching…" : "Search"}
-                        </button>
-                    </div>
-
-                    {msg && (
-                        <div className="mt-16">
-                            <p className="muted-text">{msg}</p>
-                        </div>
-                    )}
+                <div className="flex justify-end mt-6">
+                    <button
+                        onClick={search}
+                        disabled={loading}
+                        className="btn btn-primary flex items-center gap-2 bg-emerald-600 text-white px-5 py-2 rounded-lg hover:bg-emerald-700 transition"
+                    >
+                        <Search size={16} />
+                        {loading ? "Searching…" : "Search"}
+                    </button>
                 </div>
             </div>
 
-            {/* --- Results Table --- */}
-            <div className="table-wrap">
-                <table className="table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Title</th>
-                            <th>Price</th>
-                            <th>Bedrooms</th>
-                            <th>Location</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {(items || []).length > 0 ? (
-                            items.map((p) => {
-                                const enquiry = getEnquiry(p.id);
-                                const status = enquiry ? enquiry.status : null;
+            {msg && (
+                <p className="text-center text-gray-600 mb-6 italic">{msg}</p>
+            )}
 
-                                return (
-                                    <tr key={p.id}>
-                                        <td>{p.id}</td>
-                                        <td>
-                                            <Link to={`/properties/${p.id}`}>{p.title}</Link>
-                                        </td>
-                                        <td>${p.price}</td>
-                                        <td>{p.bedrooms}</td>
-                                        <td>{p.location}</td>
-                                        <td className="flex flex-col gap-2 items-start">
-                                            <div className="flex gap-3 items-center">
-                                                <Link
-                                                    to={`/properties/${p.id}`}
-                                                    className="btn btn-outline"
-                                                >
-                                                    View
-                                                </Link>
+            {/* --- Results Grid --- */}
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                {items.length > 0 ? (
+                    items.map((p) => {
+                        const enquiry = getEnquiry(p.id);
+                        const status = enquiry ? enquiry.status : null;
 
-                                                <button
-                                                    onClick={() => alert("Save not implemented")}
-                                                    className="btn btn-primary flex items-center gap-1"
-                                                >
-                                                    <Heart size={16} />
-                                                    Save
-                                                </button>
+                        return (
+                            <div
+                                key={p.id}
+                                className="bg-white rounded-xl shadow-md hover:shadow-lg transition overflow-hidden"
+                            >
+                                {/* 🏙️ Property Photo */}
+                                {p.photos && p.photos.length > 0 ? (
+                                    <img
+                                        src={p.photos[0]}  // first Base64 image
+                                        alt={p.title || "Property Photo"}
+                                        className="w-full h-48 object-cover rounded-t-xl"
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.src = "/placeholder.jpg"; // fallback
+                                        }}
+                                    />
+                                ) : (
+                                    <div className="h-48 bg-gray-200 flex items-center justify-center rounded-t-xl">
+                                        <Home className="w-10 h-10 text-emerald-600 opacity-70" />
+                                        </div>
+                                )}
 
-                                                {status === "Contacted" && (
-                                                    <button
-                                                        onClick={() => handleOpenChat(p.id)}
-                                                        className="btn btn-outline flex items-center gap-1"
+                                {/* --- Content --- */}
+                                <div className="p-5">
+                                    <h3 className="text-lg font-semibold text-gray-800 line-clamp-1">
+                                        {p.title}
+                                    </h3>
+                                    <div className="text-emerald-700 font-bold text-xl mt-1">
+                                        ${p.price.toLocaleString()}
+                                    </div>
+
+                                    <div className="text-gray-600 mt-2 flex items-center gap-1">
+                                        <MapPin size={14} />
+                                        <span>{p.location}</span>
+                                    </div>
+
+                                    <div className="text-gray-500 text-sm mt-1">
+                                        {p.bedrooms} Bedroom{p.bedrooms > 1 ? "s" : ""}
+                                    </div>
+
+                                    {/* --- Actions --- */}
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                        <Link
+                                            to={`/properties/${p.id}`}
+                                            className="px-3 py-2 text-sm border border-emerald-600 text-emerald-700 rounded-md hover:bg-emerald-600 hover:text-white transition"
+                                        >
+                                            View Details
+                                        </Link>
+
+                                        <button
+                                            onClick={() =>
+                                                alert("Save not implemented")
+                                            }
+                                            className="px-3 py-2 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 flex items-center gap-1 transition"
+                                        >
+                                            <Heart size={15} /> Save
+                                        </button>
+
+                                        {status === "Contacted" && (
+                                            <button
+                                                onClick={() => handleOpenChat(p.id)}
+                                                className="px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 flex items-center gap-1 transition"
+                                            >
+                                                <MessageSquare size={15} /> Chat
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* --- Enquiry Info --- */}
+                                    <div className="mt-3 border-t pt-2 text-sm text-gray-700">
+                                        {enquiry ? (
+                                            <>
+                                                <div>
+                                                    <strong>Status:</strong>{" "}
+                                                    <span
+                                                        className={
+                                                            enquiry.status ===
+                                                                "Contacted"
+                                                                ? "text-green-600"
+                                                                : "text-yellow-600"
+                                                        }
                                                     >
-                                                        <MessageSquare size={16} />
-                                                        Chat
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {/* === Enquiry Info Display === */}
-                                            {enquiry ? (
-                                                <div className="text-sm text-gray-700 mt-1">
-                                                    <div>
-                                                        <strong>Status:</strong>{" "}
-                                                        <span
-                                                            className={
-                                                                enquiry.status === "Contacted"
-                                                                    ? "text-green-600"
-                                                                    : "text-yellow-600"
-                                                            }
-                                                        >
-                                                            {enquiry.status}
-                                                        </span>
-                                                    </div>
-                                                    <div>
-                                                        <strong>Agent:</strong>{" "}
-                                                        {enquiry.agent_name} (
-                                                        <span className="text-gray-500">
-                                                            {enquiry.agent_email}
-                                                        </span>
-                                                        )
-                                                    </div>
-                                                    <div>
-                                                        <strong>Message:</strong>{" "}
-                                                        {enquiry.message || "-"}
-                                                    </div>
+                                                        {enquiry.status}
+                                                    </span>
                                                 </div>
-                                            ) : (
-                                                <span className="text-gray-400 text-sm">
-                                                    No enquiry yet
-                                                </span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        ) : (
-                            <tr>
-                                <td colSpan="6" className="empty">
-                                    No properties found
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
+                                                <div>
+                                                    <strong>Agent:</strong>{" "}
+                                                    {enquiry.agent_name}{" "}
+                                                    <span className="text-gray-500">
+                                                        ({enquiry.agent_email})
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <strong>Message:</strong>{" "}
+                                                    {enquiry.message || "-"}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <span className="text-gray-400">
+                                                No enquiry yet
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })
+                ) : (
+                    <div className="col-span-full text-center text-gray-500">
+                        No properties found
+                    </div>
+                )}
             </div>
 
             {/* --- Chat Modal --- */}
