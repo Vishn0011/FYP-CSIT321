@@ -249,11 +249,10 @@ export default function AddProperties() {
                     <p><strong>Confidence Range:</strong> $${fmt(data.confidence_low)} – $${fmt(data.confidence_high)}</p>
                     <p><strong>AI Confidence Level:</strong> ${data.confidence_score?.toFixed?.(1) || data.confidence_score}%</p>
                     <p><strong>Annual Growth Rate:</strong> ${data.annual_growth_rate || "—"}</p>
-                    ${
-                        data.years_forward
+                    ${data.years_forward
                             ? `<p><strong>Projection Horizon:</strong> ${data.years_forward} years ahead</p>`
                             : ""
-                    }
+                        }
                     <p><strong>Market Trend:</strong> ${data.market_trend || "Resale market projection based on current conditions."}</p>
                 </div>`,
                     confirmButtonText: "Close",
@@ -313,8 +312,8 @@ export default function AddProperties() {
                                 >
                                     <div
                                         className={`w-8 h-8 rounded-full flex items-center justify-center border ${i <= currentStep
-                                                ? "bg-emerald-50 border-emerald-600"
-                                                : "bg-gray-100 border-gray-300"
+                                            ? "bg-emerald-50 border-emerald-600"
+                                            : "bg-gray-100 border-gray-300"
                                             }`}
                                     >
                                         {i + 1}
@@ -817,7 +816,7 @@ export default function AddProperties() {
                         Your data is saved only when you click{" "}
                         <strong>Save Draft</strong> or{" "}
                         <strong>Submit for Approval</strong>.
-                    </D>
+                    </p>
                 </div>
             </form>
         </div>

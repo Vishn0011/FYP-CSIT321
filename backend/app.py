@@ -601,7 +601,17 @@ def get_property(prop_id):
             p.nearest_park_km, p.nearest_business_km, p.amenity_score, p.health_score,
             p.green_score, p.business_access_score, p.floor_level_num, p.year_completed,
             p.transaction_year, p.transaction_month, p.geo_cluster,
-            u.name AS agent_name, u.status AS agent_status, u.last_active
+            u.name AS agent_name, u.status AS agent_status, u.last_active,
+
+            -- === 🚀 ADDED THESE 6 LINES ===
+            p.nearest_mrt_name,
+            p.nearest_mall_name,
+            p.nearest_school_name,
+            p.nearest_hospital_name,
+            p.nearest_park_name,
+            p.nearest_business_name
+            -- ==========================
+
         FROM properties p
         LEFT JOIN users u ON p.agent_id = u.id
         WHERE p.id = %s
@@ -757,7 +767,7 @@ def add_property():
         geo_cluster = None
 
     # === 7️⃣ Insert property ===
-    # Ensure placeholders match parameters (exactly 39 each)
+    # I have added the 6 new name fields to the query.
     row = execute(
         """
         INSERT INTO properties
@@ -768,13 +778,20 @@ def add_property():
             nearest_mrt_km, nearest_school_km, amenity_score, health_score, green_score,
             transaction_year, transaction_month, nearest_mall_km, nearest_hospital_km,
             nearest_park_km, nearest_business_km, business_access_score, price_per_sqm,
-            floor_level_num, year_completed, geo_cluster
+            floor_level_num, year_completed, geo_cluster,
+            
+            -- === ADDED THESE 6 COLUMNS ===
+            nearest_mrt_name, nearest_mall_name, nearest_school_name,
+            nearest_hospital_name, nearest_park_name, nearest_business_name
         )
         VALUES (
             %s,%s,%s,%s,%s,%s,%s,%s,%s,
             %s,%s,%s,%s,%s,%s,%s,%s,
             %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+            
+            -- === ADDED THESE 6 PLACEHOLDERS ===
+            %s, %s, %s, %s, %s, %s
         )
         RETURNING *;
         """,
@@ -818,6 +835,14 @@ def add_property():
             floor_level_num,
             year_completed,
             geo_cluster,
+
+            # === ADDED THESE 6 VARIABLES ===
+            data.get("nearest_mrt_name"),
+            data.get("nearest_mall_name"),
+            data.get("nearest_school_name"),
+            data.get("nearest_hospital_name"),
+            data.get("nearest_park_name"),
+            data.get("nearest_business_name")
         ],
         return_row=True,
     )

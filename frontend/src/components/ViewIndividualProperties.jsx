@@ -17,7 +17,13 @@ import {
     MessageCircle,
     Send,
     History,
-    Filter, // ✅ Corrected icon name
+    Filter,
+    Train,
+    ShoppingCart,
+    School,
+    Hospital,
+    Trees,
+    Briefcase,
 } from "lucide-react";
 import {
     LineChart,
@@ -250,6 +256,21 @@ export default function PropertyDetails() {
         window.open(shareUrl, "_blank");
     };
 
+    // === 🚀 HELPER for proximity items ===
+    const ProximityItem = ({ icon, label, name, distance }) => {
+        if (!distance) return null;
+        const Icon = icon;
+        return (
+            <div className="flex items-start gap-3">
+                <Icon className="w-5 h-5 text-emerald-600 mt-1" />
+                <div>
+                    <span className="font-semibold text-gray-800">{label}</span>
+                    <p className="text-gray-600 text-sm">{name || "N/A"} ({distance} km)</p>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="property-details-page fade-in">
             {/* Breadcrumb */}
@@ -265,293 +286,346 @@ export default function PropertyDetails() {
                 </div>
             )}
 
-            <div className="property-details-grid">
-                {/* --- Photo Gallery --- */}
-                <div className="photo-gallery-wrapper">
-                    <div className="photo-gallery" ref={galleryRef}>
-                        {displayPhotos && displayPhotos.length > 0 ? (
-                            displayPhotos.map((src, i) => (
-                                <div key={`${src}-${i}`} className="gallery-slide">
-                                    <img
-                                        src={
-                                            src.startsWith("data:image") || src.startsWith("blob:")
+            {/* ============================================================
+               🚀 NEW LAYOUT: Full-Width Gallery
+            ============================================================ */}
+            <div className="photo-gallery-wrapper">
+                <div className="photo-gallery" ref={galleryRef}>
+                    {displayPhotos && displayPhotos.length > 0 ? (
+                        displayPhotos.map((src, i) => (
+                            <div key={`${src}-${i}`} className="gallery-slide">
+                                <img
+                                    src={
+                                        src.startsWith("data:image") || src.startsWith("blob:")
+                                            ? src
+                                            : src.startsWith("http")
                                                 ? src
-                                                : src.startsWith("http")
-                                                    ? src
-                                                    : `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}${src}`
-                                        }
-                                        alt={`Photo ${i + 1}`}
-                                        onError={(e) => {
-                                            e.target.onerror = null;
-                                            e.target.src = "/placeholder.jpg"; // 🖼️ fallback image
-                                            e.target.style.opacity = 0.7;
-                                        }}
-                                    />
-                                </div>
-                            ))
-                        ) : (
-                            <div className="gallery-slide">
-                                <p className="text-gray-500">No photos available</p>
+                                                : `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}${src}`
+                                    }
+                                    alt={`Photo ${i + 1}`}
+                                    onError={(e) => {
+                                        e.target.onerror = null;
+                                        e.target.src = "/placeholder.jpg"; // 🖼️ fallback image
+                                        e.target.style.opacity = 0.7;
+                                    }}
+                                />
                             </div>
-                        )}
-                    </div>
-
-                    {displayPhotos.length > 1 && (
-                        <>
-                            <button
-                                className="gallery-nav left"
-                                onClick={() => scrollGallery(-1)}
-                                aria-label="Previous image"
-                            >
-                                <ChevronLeft className="w-5 h-5 text-emerald-700" />
-                            </button>
-                            <button
-                                className="gallery-nav right"
-                                onClick={() => scrollGallery(1)}
-                                aria-label="Next image"
-                            >
-                                <ChevronRight className="w-5 h-5 text-emerald-700" />
-                            </button>
-                        </>
+                        ))
+                    ) : (
+                        <div className="gallery-slide">
+                            <p className="text-gray-500">No photos available</p>
+                        </div>
                     )}
                 </div>
 
-
-
-
-                {/* --- Property Info --- */}
-                <div className="property-info card">
-                    <div className="card-body">
-                        <h2 className="price">
-                            SGD {Number(property.price).toLocaleString()}
-                        </h2>
-                        <p className="location flex items-center">
-                            <MapPin className="w-4 h-4 mr-1 text-emerald-700" />
-                            {/* 🚨 Optional chaining added here */}
-                            {property?.location}
-                        </p>
-                        <p className="short-desc">
-                            {/* 🚨 Optional chaining added here */}
-                            {property?.description?.substring(0, 100)}...
-                        </p>
-
-                        {/* --- Agent Info --- */}
-                        {/* 🚨 Null check added here */}
-                        {property.agent && (
-                            <div className="agent-info">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-gray-800">
-                                        Agent: {property.agent.name}
-                                    </span>
-                                    {property.agent.verified && (
-                                        <span className="verified-badge">✔ Verified</span>
-                                    )}
-                                </div>
-                                <p className="agent-activity">
-                                    {property.agent.activity}
-                                    {/* 🚨 Optional chaining added here */}
-                                    {property.agent.last_active && (
-                                        <span className="ml-1 text-gray-500">
-                                            (Last active:{" "}
-                                            {new Date(property.agent.last_active).toLocaleString("en-SG", {
-                                                dateStyle: "medium",
-                                                timeStyle: "short",
-                                            })}
-                                            )
-                                        </span>
-                                    )}
-                                </p>
-                                <div className="agent-activity-bar">
-                                    <div
-                                        className="agent-activity-fill"
-                                        style={{
-                                            width: getActivityWidth(property.agent.activity),
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        <h3 className="details-title">Property Details</h3>
-                        <ul className="details-list">
-                            {/* 🚨 Optional chaining added here */}
-                            <li><strong>Bedrooms:</strong> {property.bedrooms}</li>
-                            <li><strong>Bathrooms:</strong> {property.bathrooms}</li>
-                            <li><strong>Sq. Footage:</strong> {property.size} sqft</li>
-                            <li><strong>Status:</strong> {property.status}</li>
-                            <li><strong>Type:</strong> {property.property_type}</li>
-                        </ul>
-
-                        {/* --- Share Listing (No changes needed) --- */}
-                        <div className="share-listing mt-6">
-                            <h4 className="text-gray-700 font-semibold flex items-center gap-2 mb-2">
-                                <Share2 className="w-4 h-4 text-emerald-700" /> Share this Listing
-                            </h4>
-                            <div className="share-icons">
-                                <button onClick={() => handleShare("facebook")} className="share-btn facebook">
-                                    <Facebook className="w-4 h-4" /> Facebook
-                                </button>
-                                <button onClick={() => handleShare("twitter")} className="share-btn twitter">
-                                    <Twitter className="w-4 h-4" /> Twitter
-                                </button>
-                                <button onClick={() => handleShare("whatsapp")} className="share-btn whatsapp">
-                                    <MessageCircle className="w-4 h-4" /> WhatsApp
-                                </button>
-                                <button onClick={() => handleShare("telegram")} className="share-btn telegram">
-                                    <Send className="w-4 h-4" /> Telegram
-                                </button>
-                                <button onClick={() => handleShare("instagram")} className="share-btn instagram">
-                                    <Instagram className="w-4 h-4" /> Instagram
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* --- Homeowner actions (No changes needed) --- */}
-                        {userRole === "homeowner" && (
-                            <div className="actions">
-                                <button
-                                    className="btn btn-primary flex items-center gap-2"
-                                    onClick={() => setShowModal(true)}
-                                >
-                                    <Mail className="w-4 h-4" /> Contact Agent
-                                </button>
-                                <button className="btn btn-outline flex items-center gap-2">
-                                    <Calendar className="w-4 h-4" /> Schedule a Tour
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                {displayPhotos.length > 1 && (
+                    <>
+                        <button
+                            className="gallery-nav left"
+                            onClick={() => scrollGallery(-1)}
+                            aria-label="Previous image"
+                        >
+                            <ChevronLeft className="w-5 h-5 text-emerald-700" />
+                        </button>
+                        <button
+                            className="gallery-nav right"
+                            onClick={() => scrollGallery(1)}
+                            aria-label="Next image"
+                        >
+                            <ChevronRight className="w-5 h-5 text-emerald-700" />
+                        </button>
+                    </>
+                )}
             </div>
 
-            {/* --- AI Insights Section --- */}
-            {aiInsights && !aiInsights.error ? (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-6 mt-6">
-                    <h4 className="text-green-700 font-semibold mb-2 flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4" /> AI Market Analysis
-                    </h4>
+            {/* ============================================================
+               🚀 NEW LAYOUT: Content Grid (Main Details + Sticky Sidebar)
+            ============================================================ */}
+            <div className="property-content-grid">
 
-                    <ul className="text-gray-700 list-disc list-inside space-y-1">
-                        {/* --- Predicted Future Price --- */}
-                        <li>
-                            Predicted Future Price:{" "}
-                            <strong>
-                                $
-                                {aiInsights.predicted_total_price
-                                    ? aiInsights.predicted_total_price.toLocaleString()
-                                    : aiInsights.predicted_price
-                                        ? aiInsights.predicted_price.toLocaleString()
-                                        : "N/A"}
-                            </strong>
-                        </li>
+                {/* --- Main Details Column (Left) --- */}
+                <div className="property-main-details">
 
-                        {/* --- Price per sqm (calculated if missing) --- */}
-                        <li>
-                            Price per sqm:{" "}
-                            <strong>
-                                $
-                                {(() => {
-                                    if (aiInsights.predicted_price_per_sqm)
-                                        return aiInsights.predicted_price_per_sqm.toLocaleString();
+                    {/* --- Price & Info Header Card --- */}
+                    <div className="card">
+                        <div className="card-body">
+                            <h2 className="price">
+                                SGD {Number(property.price).toLocaleString()}
+                            </h2>
+                            <p className="location flex items-center">
+                                <MapPin className="w-4 h-4 mr-1 text-emerald-700" />
+                                {property?.location}
+                            </p>
 
-                                    const price =
-                                        aiInsights.predicted_total_price ||
-                                        aiInsights.predicted_price;
-                                    const area =
-                                        property?.floor_area_sqm ||
-                                        (property?.size ? property.size * 0.092903 : 0);
+                            <h3 className="details-title">Property Details</h3>
+                            <ul className="details-list">
+                                <li><strong>Bedrooms:</strong> {property.bedrooms}</li>
+                                <li><strong>Bathrooms:</strong> {property.bathrooms}</li>
+                                <li><strong>Sq. Footage:</strong> {property.size} sqft</li>
+                                <li><strong>Status:</strong> {property.status}</li>
+                                <li><strong>Type:</strong> {property.property_type}</li>
+                            </ul>
 
-                                    if (price && area > 0) {
-                                        const perSqm = price / area;
-                                        return perSqm.toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                        });
-                                    }
-                                    return "N/A";
-                                })()}
-                            </strong>
-                        </li>
+                            <p className="short-desc mt-4">
+                                {property?.description}
+                            </p>
+                        </div>
+                    </div>
 
-                        {/* --- Confidence Range --- */}
-                        {aiInsights.confidence_low && aiInsights.confidence_high && (
-                            <li>
-                                95% Confidence Range:{" "}
-                                <strong>
-                                    ${aiInsights.confidence_low.toLocaleString()} – $
-                                    {aiInsights.confidence_high.toLocaleString()}
-                                </strong>
-                            </li>
-                        )}
+                    {/* --- Location & Proximity Card --- */}
+                    <div className="card">
+                        <div className="card-body">
+                            <h3 className="text-emerald-700 font-semibold mb-6 flex items-center gap-2">
+                                <MapPin className="w-5 h-5" /> Location & Proximity
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <ProximityItem
+                                    icon={Train}
+                                    label="Nearest MRT"
+                                    name={property.nearest_mrt_name}
+                                    distance={property.nearest_mrt_km}
+                                />
+                                <ProximityItem
+                                    icon={ShoppingCart}
+                                    label="Nearest Mall"
+                                    name={property.nearest_mall_name}
+                                    distance={property.nearest_mall_km}
+                                />
+                                <ProximityItem
+                                    icon={School}
+                                    label="Nearest School"
+                                    name={property.nearest_school_name}
+                                    distance={property.nearest_school_km}
+                                />
+                                <ProximityItem
+                                    icon={Hospital}
+                                    label="Nearest Polyclinic"
+                                    name={property.nearest_hospital_name}
+                                    distance={property.nearest_hospital_km}
+                                />
+                                <ProximityItem
+                                    icon={Trees}
+                                    label="Nearest Park"
+                                    name={property.nearest_park_name}
+                                    distance={property.nearest_park_km}
+                                />
+                                <ProximityItem
+                                    icon={Briefcase}
+                                    label="Nearest Business Hub"
+                                    name={property.nearest_business_name}
+                                    distance={property.nearest_business_km}
+                                />
+                            </div>
+                        </div>
+                    </div>
 
-                        {/* --- Confidence Score --- */}
-                        {aiInsights.confidence_score && (
-                            <li>
-                                AI Confidence Level:{" "}
-                                <strong>
-                                    {(
-                                        aiInsights.confidence_score > 1
-                                            ? aiInsights.confidence_score
-                                            : aiInsights.confidence_score * 100
-                                    ).toFixed(1)}
-                                    %
-                                </strong>{" "}
-                            </li>
-                        )}
-                    </ul>
-                </div>
-            ) : (
-                <div className="text-gray-500 italic mt-4">
-                    {aiInsights?.error
-                        ? "AI Insights unavailable for this property."
-                        : "Fetching AI Insights..."}
-                </div>
-            )}
+                    {/* --- AI Insights Card --- */}
+                    {aiInsights && !aiInsights.error ? (
+                        <div className="card bg-green-50 border border-green-200">
+                            <div className="card-body">
+                                <h4 className="text-green-700 font-semibold mb-6 flex items-center gap-2">
+                                    <ShieldCheck className="w-4 h-4" /> AI Market Analysis
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+                                    {/* Predicted Future Price */}
+                                    <div>
+                                        <span className="text-sm text-gray-600">Predicted Future Price</span>
+                                        <p className="text-2xl font-bold text-gray-900">
+                                            $
+                                            {aiInsights.predicted_total_price
+                                                ? aiInsights.predicted_total_price.toLocaleString()
+                                                : aiInsights.predicted_price
+                                                    ? aiInsights.predicted_price.toLocaleString()
+                                                    : "N/A"}
+                                        </p>
+                                    </div>
 
+                                    {/* 95% Confidence Range */}
+                                    {aiInsights.confidence_low && aiInsights.confidence_high && (
+                                        <div>
+                                            <span className="text-sm text-gray-600">95% Confidence Range</span>
+                                            <p className="text-lg font-semibold text-gray-800">
+                                                ${aiInsights.confidence_low.toLocaleString()} – $
+                                                {aiInsights.confidence_high.toLocaleString()}
+                                            </p>
+                                        </div>
+                                    )}
 
+                                    {/* Price per sqm */}
+                                    <div>
+                                        <span className="text-sm text-gray-600">Price per sqm</span>
+                                        <p className="text-lg font-semibold text-gray-800">
+                                            $
+                                            {(() => {
+                                                if (aiInsights.predicted_price_per_sqm)
+                                                    return aiInsights.predicted_price_per_sqm.toLocaleString();
+                                                const price = aiInsights.predicted_total_price || aiInsights.predicted_price;
+                                                const area = property?.floor_area_sqm || (property?.size ? property.size * 0.092903 : 0);
+                                                if (price && area > 0) {
+                                                    const perSqm = price / area;
+                                                    return perSqm.toLocaleString(undefined, {
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2,
+                                                    });
+                                                }
+                                                return "N/A";
+                                            })()}
+                                        </p>
+                                    </div>
 
-            {/* ✅ Prediction History Section (Collapsible - No changes needed) */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6 mt-6 shadow-sm">
-                <details className="group">
-                    <summary className="flex items-center gap-2 text-emerald-700 font-semibold cursor-pointer">
-                        <History className="w-4 h-4" />
-                        Prediction History
-                        <span className="ml-auto text-gray-500 text-sm group-open:hidden">▼</span>
-                        <span className="ml-auto text-gray-500 text-sm hidden group-open:inline">▲</span>
-                    </summary>
-
-                    {history.length > 0 ? (
-                        <div className="mt-4 overflow-x-auto">
-                            <table className="min-w-full border border-gray-200 rounded-md text-sm">
-                                <thead className="bg-emerald-50">
-                                    <tr>
-                                        <th className="py-2 px-4 text-left">Date</th>
-                                        <th className="py-2 px-4 text-left">Model</th>
-                                        <th className="py-2 px-4 text-left">Predicted Price</th>
-                                        <th className="py-2 px-4 text-left">95% Confidence Range</th>
-                                        <th className="py-2 px-4 text-left">AI Confidence</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {history.map((h) => (
-                                        <tr key={h.id} className="hover:bg-emerald-50">
-                                            <td className="py-2 px-4 border-t">{h.created_at}</td>
-                                            <td className="py-2 px-4 border-t">{h.model_type}</td>
-                                            <td className="py-2 px-4 border-t">{h.predicted_price}</td>
-                                            <td className="py-2 px-4 border-t">{h.confidence_range}</td>
-                                            <td className="py-2 px-4 border-t">{h.ai_confidence}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    {/* AI Confidence Level */}
+                                    {aiInsights.confidence_score && (
+                                        <div>
+                                            <span className="text-sm text-gray-600">AI Confidence Level</span>
+                                            <p className="text-lg font-semibold text-gray-800">
+                                                {(
+                                                    aiInsights.confidence_score > 1
+                                                        ? aiInsights.confidence_score
+                                                        : aiInsights.confidence_score * 100
+                                                ).toFixed(1)}
+                                                %
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     ) : (
-                        <p className="text-gray-500 italic mt-4">
-                            No prediction history yet. Try generating a forecast first.
-                        </p>
+                        <div className="text-gray-500 italic mt-4">
+                            {aiInsights?.error
+                                ? "AI Insights unavailable for this property."
+                                : "Fetching AI Insights..."}
+                        </div>
                     )}
-                </details>
-            </div>
+
+                    {/* --- Prediction History Card --- */}
+                    <div className="card">
+                        <div className="card-body">
+                            <details className="group">
+                                <summary className="flex items-center gap-2 text-emerald-700 font-semibold cursor-pointer">
+                                    <History className="w-4 h-4" />
+                                    Prediction History
+                                    <span className="ml-auto text-gray-500 text-sm group-open:hidden">▼</span>
+                                    <span className="ml-auto text-gray-500 text-sm hidden group-open:inline">▲</span>
+                                </summary>
+
+                                {history.length > 0 ? (
+                                    <div className="mt-4 overflow-x-auto">
+                                        <table className="min-w-full border border-gray-200 rounded-md text-sm">
+                                            <thead className="bg-emerald-50">
+                                                <tr>
+                                                    <th className="py-2 px-4 text-left">Date</th>
+                                                    <th className="py-2 px-4 text-left">Model</th>
+                                                    <th className="py-2 px-4 text-left">Predicted Price</th>
+                                                    <th className="py-2 px-4 text-left">95% Confidence Range</th>
+                                                    <th className="py-2 px-4 text-left">AI Confidence</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {history.map((h) => (
+                                                    <tr key={h.id} className="hover:bg-emerald-50">
+                                                        <td className="py-2 px-4 border-t">{h.created_at}</td>
+                                                        <td className="py-2 px-4 border-t">{h.model_type}</td>
+                                                        <td className="py-2 px-4 border-t">{h.predicted_price}</td>
+                                                        <td className="py-2 px-4 border-t">{h.confidence_range}</td>
+                                                        <td className="py-2 px-4 border-t">{h.ai_confidence}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-500 italic mt-4">
+                                        No prediction history yet. Try generating a forecast first.
+                                    </p>
+                                )}
+                            </details>
+                        </div>
+                    </div>
+                </div>
+
+                {/* --- Sticky Sidebar Column (Right) --- */}
+                <div className="property-sidebar">
+                    <div className="property-info card sticky top-5 self-start">
+                        <div className="card-body">
+                            {/* --- Agent Info --- */}
+                            {property.agent && (
+                                <div className="agent-info">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-semibold text-gray-800">
+                                            Agent: {property.agent.name}
+                                        </span>
+                                        {property.agent.verified && (
+                                            <span className="verified-badge">✔ Verified</span>
+                                        )}
+                                    </div>
+                                    <p className="agent-activity">
+                                        {property.agent.activity}
+                                        {property.agent.last_active && (
+                                            <span className="ml-1 text-gray-500">
+                                                (Last active:{" "}
+                                                {new Date(property.agent.last_active).toLocaleString("en-SG", {
+                                                    dateStyle: "medium",
+                                                    timeStyle: "short",
+                                                })}
+                                                )
+                                            </span>
+                                        )}
+                                    </p>
+                                    <div className="agent-activity-bar">
+                                        <div
+                                            className="agent-activity-fill"
+                                            style={{
+                                                width: getActivityWidth(property.agent.activity),
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* --- Homeowner actions --- */}
+                            {userRole === "homeowner" && (
+                                <div className="actions">
+                                    <button
+                                        className="btn btn-primary flex items-center gap-2"
+                                        onClick={() => setShowModal(true)}
+                                    >
+                                        <Mail className="w-4 h-4" /> Contact Agent
+                                    </button>
+                                    <button className="btn btn-outline flex items-center gap-2">
+                                        <Calendar className="w-4 h-4" /> Schedule a Tour
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* --- Share Listing --- */}
+                            <div className="share-listing mt-6">
+                                <h4 className="text-gray-700 font-semibold flex items-center gap-2 mb-2">
+                                    <Share2 className="w-4 h-4 text-emerald-700" /> Share this Listing
+                                </h4>
+                                <div className="share-icons">
+                                    <button onClick={() => handleShare("facebook")} className="share-btn facebook">
+                                        <Facebook className="w-4 h-4" /> Facebook
+                                    </button>
+                                    <button onClick={() => handleShare("twitter")} className="share-btn twitter">
+                                        <Twitter className="w-4 h-4" /> Twitter
+                                    </button>
+                                    <button onClick={() => handleShare("whatsapp")} className="share-btn whatsapp">
+                                        <MessageCircle className="w-4 h-4" /> WhatsApp
+                                    </button>
+                                    <button onClick={() => handleShare("telegram")} className="share-btn telegram">
+                                        <Send className="w-4 h-4" /> Telegram
+                                    </button>
+                                    <button onClick={() => handleShare("instagram")} className="share-btn instagram">
+                                        <Instagram className="w-4 h-4" /> Instagram
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div> {/* <-- END OF property-content-grid --> */}
 
 
             {/* --- Contact Modal (Homeowner only) --- */}
