@@ -133,19 +133,19 @@ export default function AddProperties() {
                 Swal.fire({
                     title: "📍 Location Analysis Completed",
                     html: `
-                    <div style="text-align:left; font-size:14px;">
-                        <p><b>Nearest MRT:</b> ${data.nearest_mrt_name || "—"} (${data.nearest_mrt_km ?? "—"} km)</p>
-                        <p><b>Nearest Mall:</b> ${data.nearest_mall_name || "—"} (${data.nearest_mall_km ?? "—"} km)</p>
-                        <p><b>Nearest School:</b> ${data.nearest_school_name || "—"} (${data.nearest_school_km ?? "—"} km)</p>
-                        <p><b>Nearest Hospital:</b> ${data.nearest_hospital_name || "—"} (${data.nearest_hospital_km ?? "—"} km)</p>
-                        <p><b>Nearest Park:</b> ${data.nearest_park_name || "—"} (${data.nearest_park_km ?? "—"} km)</p>
-                        <p><b>Nearest Business Hub:</b> ${data.nearest_business_name || "—"} (${data.nearest_business_km ?? "—"} km)</p>
-                        <hr/>
-                        <p><b>Amenity Score:</b> ${data.amenity_score}/10</p>
-                        <p><b>Health Score:</b> ${data.health_score}/10</p>
-                        <p><b>Green Score:</b> ${data.green_score}/10</p>
-                        <p><b>Business Access Score:</b> ${data.business_access_score}/10</p>
-                    </div>`,
+                        <div style="text-align:left; font-size:14px;">
+                            <p><b>Nearest MRT:</b> ${data.nearest_mrt_name || "—"} (${data.nearest_mrt_km ?? "—"} km)</p>
+                            <p><b>Nearest Mall:</b> ${data.nearest_mall_name || "—"} (${data.nearest_mall_km ?? "—"} km)</p>
+                            <p><b>Nearest School:</b> ${data.nearest_school_name || "—"} (${data.nearest_school_km ?? "—"} km)</p>
+                            <p><b>Nearest Hospital:</b> ${data.nearest_hospital_name || "—"} (${data.nearest_hospital_km ?? "—"} km)</p>
+                            <p><b>Nearest Park:</b> ${data.nearest_park_name || "—"} (${data.nearest_park_km ?? "—"} km)</p>
+                            <p><b>Nearest Business Hub:</b> ${data.nearest_business_name || "—"} (${data.nearest_business_km ?? "—"} km)</p>
+                            <hr/>
+                            <p><b>Amenity Score:</b> ${data.amenity_score}/10</p>
+                            <p><b>Health Score:</b> ${data.health_score}/10</p>
+                            <p><b>Green Score:</b> ${data.green_score}/10</p>
+                            <p><b>Business Access Score:</b> ${data.business_access_score}/10</p>
+                        </div>`,
                     confirmButtonColor: "#00674f",
                 });
             } catch (err) {
@@ -241,19 +241,23 @@ export default function AddProperties() {
                 setAiResult(data);
 
                 Swal.fire({
-                    title: "🤖 AI Market Analysis",
+                    title: "🏡 Future Resale Price Forecast",
                     html: `
-                <div style="text-align:left; font-size:14px;">
-                    <p><strong>Predicted Future Price:</strong> $${fmt(data.predicted_total_price)}</p>
+                <div style="text-align:left; font-size:14px; line-height:1.6;">
+                    <p><strong>Predicted Future Resale Price:</strong> $${fmt(data.predicted_total_price)}</p>
                     <p><strong>Price per sqm:</strong> $${fmt(data.predicted_price_per_sqm)}</p>
-                    <p><strong>95% Confidence Range:</strong> $${fmt(data.confidence_low)} – $${fmt(data.confidence_high)}</p>
-                    <p><strong>AI Confidence Level:</strong> ${data.confidence_score}%</p>
-                    <p><strong>Market Trend:</strong> ${data.market_trend || "Market steady with potential growth."}</p>
+                    <p><strong>Confidence Range:</strong> $${fmt(data.confidence_low)} – $${fmt(data.confidence_high)}</p>
+                    <p><strong>AI Confidence Level:</strong> ${data.confidence_score?.toFixed?.(1) || data.confidence_score}%</p>
+                    <p><strong>Annual Growth Rate:</strong> ${data.annual_growth_rate || "—"}</p>
+                    ${
+                        data.years_forward
+                            ? `<p><strong>Projection Horizon:</strong> ${data.years_forward} years ahead</p>`
+                            : ""
+                    }
+                    <p><strong>Market Trend:</strong> ${data.market_trend || "Resale market projection based on current conditions."}</p>
                 </div>`,
-                    icon: "success",
-                    confirmButtonText: "Done",
-                    confirmButtonColor: "#00674f",
-                    width: 520,
+                    confirmButtonText: "Close",
+                    confirmButtonColor: "#16a34a", // emerald tone
                 }).then(() => navigate("/properties"));
             } else {
                 navigate("/properties");
@@ -487,28 +491,36 @@ export default function AddProperties() {
                                 </select>
                             </div>
 
-                            <div className="full">
-                                <label className="label">Amenities</label>
-                                <div className="flex gap-4 flex-wrap">
-                                    {amenities.map((a) => (
-                                        <label key={a.id} className="inline-flex items-center gap-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={form.amenities.includes(a.name)}
-                                                onChange={(e) =>
-                                                    setForm((prev) => ({
-                                                        ...prev,
-                                                        amenities: e.target.checked
-                                                            ? [...prev.amenities, a.name]
-                                                            : prev.amenities.filter((x) => x !== a.name),
-                                                    }))
-                                                }
-                                            />
-                                            {a.name}
-                                        </label>
-                                    ))}
+                            {/* ============================================================
+                            ENHANCEMENT IMPLEMENTED: Conditionally render Amenities
+                            ============================================================
+                            */}
+                            {form.property_type === "Condominium" && (
+                                <div className="full">
+                                    <label className="label">Amenities</label>
+                                    <div className="flex gap-4 flex-wrap">
+                                        {amenities.map((a) => (
+                                            <label key={a.id} className="inline-flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.amenities.includes(a.name)}
+                                                    onChange={(e) =>
+                                                        setForm((prev) => ({
+                                                            ...prev,
+                                                            amenities: e.target.checked
+                                                                ? [...prev.amenities, a.name]
+                                                                : prev.amenities.filter((x) => x !== a.name),
+                                                        }))
+                                                    }
+                                                />
+                                                {a.name}
+                                            </label>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+                            {/* ============================================================ */}
+
                         </div>
                     )}
                     {/* STEP 3: LOCATION & SCORES */}
@@ -805,10 +817,9 @@ export default function AddProperties() {
                         Your data is saved only when you click{" "}
                         <strong>Save Draft</strong> or{" "}
                         <strong>Submit for Approval</strong>.
-                    </p>
+                    </D>
                 </div>
             </form>
         </div>
     );
 }
-

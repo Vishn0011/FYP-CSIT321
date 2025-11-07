@@ -21,6 +21,8 @@ export default function AdminDashboard() {
     const [listings, setListings] = useState([]);
     const [selected, setSelected] = useState(null);
     const [pendingUsers, setPendingUsers] = useState([]);
+    const [loadingPred, setLoadingPred] = useState(false);
+
 
 
     async function approveProperty(id) {
@@ -65,6 +67,26 @@ export default function AdminDashboard() {
             console.error("Failed to fetch property details:", err);
         }
     }
+    useEffect(() => {
+        if (!selected?.id) return; // only run when we have a property
+        setLoadingPred(true);
+
+        const fetchPrediction = async () => {
+            try {
+                // ⚠️ adjust path if your baseURL already has /api
+                const res = await api.get(`/api/predict/${selected.id}`);
+                if (res.data.success) {
+                    setSelected(prev => ({ ...prev, ...res.data }));
+                }
+            } catch (err) {
+                console.error("❌ Failed to fetch prediction:", err);
+            } finally {
+                setLoadingPred(false);
+            }
+        };
+
+        fetchPrediction();
+    }, [selected?.id]);
 
     useEffect(() => {
         async function fetchStats() {
@@ -312,18 +334,66 @@ export default function AdminDashboard() {
                                         </p>
                                         {selected.photos && (
                                             <div className="grid grid-cols-2 gap-2 mt-4">
-                                                {JSON.parse(
-                                                    selected.photos
+                                                {(Array.isArray(selected.photos)
+                                                    ? selected.photos
+                                                    : JSON.parse(selected.photos || "[]")
                                                 ).map((url, idx) => (
                                                     <img
                                                         key={idx}
                                                         src={url}
                                                         alt="property"
                                                         className="w-full h-32 object-cover rounded"
+                                                        onError={(e) => {
+                                                            e.target.onerror = null;
+                                                            e.target.src = "/placeholder.jpg";
+                                                        }}
                                                     />
                                                 ))}
                                             </div>
                                         )}
+                                        {selected.predicted_total_price && (
+                                            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 mt-5 shadow-sm">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <span className="text-emerald-600 text-xl">🤖</span>
+                                                    <h4 className="font-semibold text-emerald-900 text-lg tracking-tight">
+                                                        AI Market Prediction
+                                                    </h4>
+                                                </div>
+
+                                                <ul className="text-sm text-gray-800 space-y-2">
+                                                    <li className="flex justify-between border-b border-gray-100 pb-1">
+                                                        <span className="font-medium text-gray-600">Predicted Future Price:</span>
+                                                        <span className="font-semibold text-emerald-800">
+                                                            ${Number(selected.predicted_total_price).toLocaleString()}
+                                                        </span>
+                                                    </li>
+
+                                                    <li className="flex justify-between border-b border-gray-100 pb-1">
+                                                        <span className="font-medium text-gray-600">Price per sqm:</span>
+                                                        <span className="font-semibold">
+                                                            ${Number(selected.predicted_price_per_sqm).toLocaleString()}
+                                                        </span>
+                                                    </li>
+
+                                                    <li className="flex justify-between border-b border-gray-100 pb-1">
+                                                        <span className="font-medium text-gray-600">Confidence Range:</span>
+                                                        <span>
+                                                            ${Number(selected.confidence_low).toLocaleString()} – $
+                                                            {Number(selected.confidence_high).toLocaleString()}
+                                                        </span>
+                                                    </li>
+
+                                                    <li className="flex justify-between border-b border-gray-100 pb-1">
+                                                        <span className="font-medium text-gray-600">AI Confidence Level:</span>
+                                                        <span className="font-semibold text-indigo-700">
+                                                            {(Number(selected.confidence_score) * 100).toFixed(0)}%
+                                                        </span>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        )}
+
+
                                         <div className="flex gap-4 justify-end mt-6">
                                             <button
                                                 onClick={() =>

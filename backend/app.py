@@ -25,6 +25,7 @@ from math import radians, cos, sin, asin, sqrt
 import requests
 from psycopg2 import OperationalError
 import stripe
+from decimal import Decimal
 
 load_dotenv()
 app = Flask(__name__)
@@ -50,9 +51,79 @@ ENCODER_PATHS = {
     "geo_cluster": os.path.join(MODEL_DIR, "geo_cluster_encoder.joblib"),
 }
 
+DATA_PATH = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\excel\Cleaned_Merged_Property_Transactions_v2.xlsx"
+CACHE_FILE = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\cache\growth_rates.json"
+LAGS_PATH = "cache/regional_lags.json"
+
+def load_growth_rates(file_path: str):
+    """
+    Loads or caches region-level annualized growth rates (CAGR) per region.
+    Uses cached JSON if available for near-instant startup (<0.1s).
+    If not cached, computes from Excel once and saves result.
+    """
+    # ✅ 1. Use cache if available
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r") as f:
+                growth_dict = json.load(f)
+            print("⚡ Loaded growth rates from cache.")
+            for k, v in growth_dict.items():
+                print(f"   {k}: {v:.4f}")
+            return growth_dict
+        except Exception as e:
+            print(f"⚠️ Failed to read cache ({e}), recomputing...")
+
+    # ✅ 2. Compute fresh if cache not found
+    print("📊 Computing growth rates from dataset...")
+    use_cols = ["region", "transaction_date", "price", "floor_area_sqm"]
+    df = pd.read_excel(file_path, usecols=use_cols)
+
+    # Sample 20% to improve performance (optional)
+    if len(df) > 3000:
+        df = df.sample(frac=0.2, random_state=42)
+
+    # --- Derived columns ---
+    df["price_per_sqm"] = df["price"] / df["floor_area_sqm"]
+    df["transaction_year"] = pd.to_datetime(df["transaction_date"], errors="coerce").dt.year
+    df = df.dropna(subset=["region", "transaction_year", "price_per_sqm"])
+
+    growth_dict = {}
+
+    # --- Compute CAGR per region ---
+    for region, group in df.groupby("region"):
+        group = group.groupby("transaction_year")["price_per_sqm"].median().sort_index()
+        if len(group) >= 2:
+            first, last = group.iloc[0], group.iloc[-1]
+            years = group.index[-1] - group.index[0]
+            if first > 0 and years > 0:
+                cagr = (last / first) ** (1 / years) - 1
+                # smooth to realistic range (2–6%)
+                cagr_smoothed = min(max(cagr / 6, 0.02), 0.06)
+                growth_dict[region.title()] = round(cagr_smoothed, 4)
+
+    # ✅ 3. Save to cache for next startup
+    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+    with open(CACHE_FILE, "w") as f:
+        json.dump(growth_dict, f, indent=4)
+
+    print("✅ Cached region-level growth rates:")
+    for k, v in growth_dict.items():
+        print(f"   {k}: {v:.4f}")
+
+    return growth_dict
+
+
+# === Global Load Once ===
+GROWTH_RATES = None
+if GROWTH_RATES is None:
+    print("📈 Loading dynamic regional growth rates...")
+    GROWTH_RATES = load_growth_rates(DATA_PATH)
+    print(f"✅ Loaded growth rates: {GROWTH_RATES}")
+
 # Global variables to hold the loaded assets
 future_model = None
 encoders = {}
+regional_lags = {}
 
 try:
     print(f"Loading model from {MODEL_PATH}...")
@@ -63,6 +134,15 @@ try:
         print(f"Loading encoder for {name} from {path}...")
         encoders[name] = joblib.load(path)
     print("All encoders loaded successfully.")
+
+    print(f"Loading regional lags from {LAGS_PATH}...")
+    if os.path.exists(LAGS_PATH):
+        with open(LAGS_PATH, 'r') as f:
+            regional_lags = json.load(f)
+        print("Regional lags loaded successfully.")
+    else:
+        print(f"⚠️ ERROR: Regional lags file not found at {LAGS_PATH}")
+        regional_lags = None # Set to None so the endpoint check will fail safely
 
 except Exception as e:
     print(f"ERROR: Could not load model or encoders. Ensure MODEL_DIR ('{MODEL_DIR}') contains all joblib files.")
@@ -125,43 +205,43 @@ def login():
         return jsonify({"error": "invalid role"}), 400
 
     with get_cursor() as cur:
+        # Authenticate
         cur.execute("""
             SELECT id, email, name, role, is_active, status
             FROM users
             WHERE email = %s
               AND crypt(%s, password_hash) = password_hash
               AND role = %s
+            LIMIT 1
         """, [email, password, role])
         user = cur.fetchone()
 
-    if not user:
-        return jsonify({"error": "invalid credentials or role"}), 401
+        if not user:
+            return jsonify({"error": "invalid credentials or role"}), 401
 
-    #Enforce approval rules
-    if not user["is_active"] or user["status"] != "approved":
-        return jsonify({
-            "error": "Your account is pending admin approval.",
-            "user": {
-                "id": user["id"],
-                "email": user["email"],
-                "name": user.get("name"),
-                "role": user.get("role"),
-                "status": user.get("status"),
-            }
-        }), 403
+        # Enforce approval
+        if not user["is_active"] or user["status"] != "approved":
+            return jsonify({
+                "error": "Your account is pending admin approval.",
+                "user": {
+                    "id": user["id"],
+                    "email": user["email"],
+                    "name": user.get("name"),
+                    "role": user.get("role"),
+                    "status": user.get("status"),
+                }
+            }), 403
 
-    # Generate session
-    token = make_token()
-    exp = expires_at(SESSION_TTL_MIN)
+        # Generate session + update agent last_active (same connection)
+        token = make_token()
+        exp = expires_at(SESSION_TTL_MIN)
 
-    with get_cursor() as cur:
         cur.execute("""
             INSERT INTO sessions(user_id, token, expires_at)
             VALUES (%s, %s, %s)
         """, [user["id"], token, exp])
 
-    if user["role"] == "agent":
-        with get_cursor() as cur:
+        if user["role"] == "agent":
             cur.execute("""
                 UPDATE users
                 SET last_active = NOW()
@@ -183,7 +263,6 @@ def login():
             "status": user.get("status"),
         }
     })
-
 
 #Auth Admin Login
 
@@ -1554,119 +1633,149 @@ def send_chat_email_to_buyer(buyer_name, buyer_email, agent_name, property_title
 #  Predict Future Property Price 
 # ============================================================
 @app.post("/api/predict/future")
-def predict_future():
+def predict_future_resale():
     """
-    Predicts the future price of a property using the trained LightGBM model (v3).
-    Also saves the prediction result to the 'predictions' table.
+    Predicts *future resale price* using the trained LightGBM model (v3),
+    applying dynamic annual growth rates per region based on actual dataset trends.
     """
-    if future_model is None or not encoders:
-        return jsonify({"error": "Model or encoders not loaded. Check server logs."}), 503
+    
+    if future_model is None or not encoders or not regional_lags:
+        return jsonify({"error": "Model, encoders, or lag data not loaded. Check server logs."}), 503
 
     body = request.get_json(force=True) or {}
     print(f"Incoming JSON Body: {body}")
 
-    property_id = body.get("property_id")
-    user_id = body.get("user_id")
-
-    # --- Market Assumptions Defined ---
-    BIAS_CORRECTION_FACTOR = 1.045
-    ANNUAL_GROWTH_RATE = 0.08
-    LUXURY_PREMIUM_FACTOR = 1.80 
-    REFERENCE_YEAR = 2022.5
-    FORWARD_YEARS = 3 
-
     try:
-        # === 1️⃣ Retrieve property & Basic attributes ===
-        prop = body 
+        # === 1️⃣ Parse & Normalize Input ===
+        floor_area_sqm = 0.0
+        
+        if body.get("floor_area_sqm"):
+            floor_area_sqm = float(body["floor_area_sqm"])
+        elif any(k in body for k in ["floor_area_sqft", "sqft", "size"]):
+            for key in ["floor_area_sqft", "sqft", "size"]:
+                if body.get(key):
+                    floor_area_sqm = float(body[key]) * 0.092903
+                    break
+
+        if floor_area_sqm <= 10:
+            floor_area_sqm = 75.0 # Default fallback
+            print(f"⚠️ Defaulted floor_area_sqm={floor_area_sqm}")
+
+        price = float(body.get("price") or 0)
+        
+        # --- (A) Get RAW inputs from frontend ---
+        region_str_raw = str(body.get("region") or "Central").title()
+        prop_type_raw = str(body.get("property_type_final") or body.get("property_type") or "Condo")
+        tenure_raw = str(body.get("tenure") or "99-year")
+
+# --- (B) ✨ NORMALIZATION FIX (Corrected) ✨ ---
+        # This block now correctly handles all inputs and standardizes
+        # them to the strings your model was trained on.
+        
+        if "hdb" in prop_type_raw.lower():
+            prop_type = "HDB"
+        elif "condo" in prop_type_raw.lower():
+            # FIX: Catches 'Condo' from frontend and converts to 'Condominium'
+            prop_type = "Condominium"
+        else:
+            # Default for any other private property
+            prop_type = "Condominium"
+            
+        if "99-year" in tenure_raw.lower() or "99 year" in tenure_raw.lower():
+            # FIX: Catches '99-year Leasehold' AND '99-year'
+            # and standardizes them to the correct '99-year Leasehold'
+            tenure_str = "99-year Leasehold"
+        elif "freehold" in tenure_raw.lower():
+            tenure_str = "Freehold"
+        elif "999" in tenure_raw:
+            # NOTE: Your model might expect '999-year Leasehold'
+            # If '999-year' fails, change this.
+            tenure_str = "999-year"
+        else:
+            # Default fallback set to match training data
+            tenure_str = "99-year Leasehold" 
+
+        region_str = region_str_raw
+        
+        # --- (C) Continue parsing other features ---        
+        # --- (C) Continue parsing other features ---
+        nearest_mrt_km = float(body.get("nearest_mrt_km") or 0.8)
+        nearest_mall_km = float(body.get("nearest_mall_km") or 1.5)
+        nearest_school_km = float(body.get("nearest_school_km") or 1.0)
+        nearest_hospital_km = float(body.get("nearest_hospital_km") or 2.0)
+        nearest_park_km = float(body.get("nearest_park_km") or 1.2)
+        amenity_score = float(body.get("amenity_score") or 5.0)
+
+        remaining_lease = float(body.get("remaining_lease") or 90)
+        year_completed = int(body.get("year_completed") or datetime.now().year)
         transaction_year = datetime.now().year
         transaction_month = datetime.now().month
-
-        raw_price_input = prop.get("price")
-        price = 0.0
-        try:
-            price = float(str(raw_price_input).strip())
-        except (ValueError, TypeError):
-            price = 0.0
-        
-        if price <= 1000:
-            error_message = f"Input 'price' is missing or too low for a valid prediction. Received raw price input: '{raw_price_input}'"
-            return jsonify({"error": error_message}), 400
-
-        log_price = np.log1p(price)
-
-        # 🧮 Determine size in square meters (sqm)
-        floor_area_sqm = 0.0
-        if prop.get("floor_area_sqm") is not None:
-            floor_area_sqm = float(prop["floor_area_sqm"])
-        else:
-            size_sqft = 0.0
-            for key in ["size", "sqft", "area_sqft", "floor_area_sqft"]: 
-                if prop.get(key) is not None:
-                    size_sqft = float(prop[key])
-                    break
-            if size_sqft > 0:
-                floor_area_sqm = round(size_sqft * 0.092903, 2)
-        if floor_area_sqm < 10: 
-            floor_area_sqm = 75.0 
-            print(f"WARNING: No area found in input. Using default floor_area_sqm={floor_area_sqm}")
-
-        nearest_mrt_km = float(prop.get("nearest_mrt_km") or 0.8)
-        nearest_mall_km = float(prop.get("nearest_mall_km") or 1.5)
-        nearest_school_km = float(prop.get("nearest_school_km") or 1.0)
-        nearest_hospital_km = float(prop.get("nearest_hospital_km") or 2.0)
-        nearest_park_km = float(prop.get("nearest_park_km") or 1.2)
-        amenity_score = float(prop.get("amenity_score") or 5.0)
-
-        year_completed = int(prop.get("year_completed") or transaction_year)
         property_age = max(0, transaction_year - year_completed)
-        remaining_lease = float(prop.get("remaining_lease") or 90)
 
-        region_str = str(prop.get("region") or "Central").title()
-        prop_type = str(prop.get("property_type_final") or prop.get("property_type") or "Condo").title()
-        tenure_str = str(prop.get("tenure") or "Freehold").title()
+        latitude = float(body.get("latitude") or 1.35)
+        longitude = float(body.get("longitude") or 103.82)
         
-        latitude = float(prop.get("latitude") or 1.35)
-        longitude = float(prop.get("longitude") or 103.82)
+        # === 1b. BUSINESS LOGIC GUARDRAILS ===
+        if remaining_lease < 5:
+            return jsonify({
+                "error": "Prediction Unreliable",
+                "message": f"Properties with {remaining_lease} years remaining have non-standard valuation. Model cannot provide an accurate forecast."
+            }), 400
         
-        log_floor_area_sqm = np.log1p(floor_area_sqm)
-        price_per_sqm = log_price - log_floor_area_sqm
-        
-        remaining_lease_adj = 999
-        if "freehold" not in tenure_str.lower():
-            remaining_lease_adj = remaining_lease
-        
+        nearest_mrt_km = max(0.1, min(10.0, nearest_mrt_km))
+        floor_area_sqm = max(30.0, min(1000.0, floor_area_sqm))
+
+        # === 2️⃣ Derived Features (Matching training script) ===
+        if price > 0:
+            price_per_sqm = price / floor_area_sqm
+        else:
+            price_per_sqm = 0 
+            print("⚠️ Warning: Input price is 0, price_per_sqm set to 0.")
+
+        remaining_lease_adj = 999 if "freehold" in tenure_str.lower() else remaining_lease
         year_sin = np.sin(2 * np.pi * transaction_month / 12)
         year_cos = np.cos(2 * np.pi * transaction_month / 12)
-        
-        price_lag_1 = log_price
-        price_lag_3 = np.log1p(price * 0.98) 
-        price_lag_6 = np.log1p(price * 0.95) 
-
-        amenity_density = 1 / (
-            nearest_mrt_km + nearest_mall_km +
-            nearest_school_km + nearest_hospital_km + 1
-        )
+        amenity_density = 1 / (nearest_mrt_km + nearest_mall_km + nearest_school_km + nearest_hospital_km + 1)
         mrt_x_area = nearest_mrt_km * floor_area_sqm
         mall_x_school = nearest_mall_km * nearest_school_km
         
-        geo_cluster_str = (str(round(latitude, 2)) + "_" + str(round(longitude, 2)))
+        geo_cluster_str = f"{round(latitude, 2)}_{round(longitude, 2)}"
         
-        def safe_encode(encoder_name, value, default_code=0):
-            le = encoders.get(encoder_name)
-            if not le: return default_code
+        # --- ANCHORING FIX ---
+        default_lags = regional_lags.get("Central", {}) 
+        lags = regional_lags.get(region_str, default_lags)
+        
+        # Use a copy of `price` for the lags, but keep original `price` for the bias check
+        user_input_price = float(body.get("price") or 0)
+        if user_input_price == 0:
+            user_input_price = lags.get("price_lag_1", 1000000)
+            
+        price_lag_1 = user_input_price
+        price_lag_3 = user_input_price
+        price_lag_6 = user_input_price
+        # --- END ANCHORING FIX ---
+
+        # === 3️⃣ Encoding ===
+        def safe_encode(name, value):
+            le = encoders.get(name)
+            if not le:
+                print(f"⚠️ Warning: Encoder '{name}' not found.")
+                return 0
             if value in le.classes_:
                 return le.transform([value])[0]
             else:
-                return default_code 
+                print(f"⚠️ Warning: Unknown value '{value}' for feature '{name}'. Defaulting to 0.")
+                return 0
 
         region_code = safe_encode("region", region_str)
-        prop_type_code = safe_encode("property_type_final", prop_type)
+        prop_type_code = safe_encode("property_type_final", prop_type) 
         tenure_code = safe_encode("tenure", tenure_str)
         geo_cluster_code = safe_encode("geo_cluster", geo_cluster_str)
 
+        # === 4️⃣ Assemble Features for Model ===
         input_data = {
             "floor_area_sqm": floor_area_sqm,
-            "price_per_sqm": price_per_sqm, 
+            "price_per_sqm": price_per_sqm,
             "remaining_lease_adj": remaining_lease_adj,
             "property_age": property_age,
             "nearest_mrt_km": nearest_mrt_km,
@@ -1679,9 +1788,9 @@ def predict_future():
             "transaction_month": transaction_month,
             "year_sin": year_sin,
             "year_cos": year_cos,
-            "price_lag_1": price_lag_1, 
-            "price_lag_3": price_lag_3, 
-            "price_lag_6": price_lag_6, 
+            "price_lag_1": price_lag_1,
+            "price_lag_3": price_lag_3,
+            "price_lag_6": price_lag_6,
             "amenity_density": amenity_density,
             "mrt_x_area": mrt_x_area,
             "mall_x_school": mall_x_school,
@@ -1693,68 +1802,67 @@ def predict_future():
         
         X_input = pd.DataFrame([input_data])
         X_input = X_input.reindex(columns=MODEL_FEATURES, fill_value=0)
+
+        # === 5️⃣ Base Prediction ===
+        base_pred_log = future_model.predict(X_input)[0]
+        model_base_price = np.expm1(base_pred_log) # This is the model's (biased) opinion
         
-        raw_pred_log = future_model.predict(X_input)[0] 
-        unscaled_base_pred = np.expm1(raw_pred_log)
-        predicted_total_price_at_top = unscaled_base_pred
+        # === 5b. ✨ DYNAMIC BIAS CORRECTION (New Fix) ✨ ===
+        # This dynamically catches bias for new estates like Tengah
+        # without hard-coding estate names.
         
-        predicted_total_price_at_top *= BIAS_CORRECTION_FACTOR
-        growth_factor_to_top = (1 + ANNUAL_GROWTH_RATE) ** (transaction_year - REFERENCE_YEAR)
-        predicted_total_price_at_top *= growth_factor_to_top
+        final_base_price = model_base_price
+        correction_reason = "None"
+        
+        # If the model's guess is >20% different from the user's *actual* price,
+        # we trust the user's price as the "real" base.
+        if user_input_price > 0 and abs(model_base_price - user_input_price) / user_input_price > 0.20:
+            print(f"⚠️ Model bias detected! Model: {model_base_price:,.0f}, User: {user_input_price:,.0f}")
+            print("    Overriding model base price with user's input price.")
+            final_base_price = user_input_price # Use the user's price as the "real" base
+            correction_reason = f"Model bias corrected. (Base: {user_input_price:,.0f})"
+            
+        # === 6️⃣ Apply Dynamic Resale Market Growth ===
+        YEARS_FORWARD = float(body.get("years_forward") or 3)
 
-        luxury_premium_factor_applied = 1.0
-        if ("freehold" in tenure_str.lower() or "999" in tenure_str) and year_completed >= 2025:
-            luxury_premium_factor_applied = LUXURY_PREMIUM_FACTOR
-            predicted_total_price_at_top *= luxury_premium_factor_applied
+        ANNUAL_GROWTH_RATE = GROWTH_RATES.get(region_str, np.mean(list(GROWTH_RATES.values())))
+        
+        # Calculate the future price from the *corrected* base price
+        predicted_future_price = final_base_price * ((1 + ANNUAL_GROWTH_RATE) ** YEARS_FORWARD)
 
-        uplift_percent = ((predicted_total_price_at_top / unscaled_base_pred) - 1) * 100 
+        # === 7️⃣ Dynamic Confidence Calculation (FIXED) ===
+        confidence_base = 0.86  
+        volatility_factor = 1 - np.exp(-0.1 * property_age / 10)
+        confidence_score = round(max(50.0, (confidence_base - volatility_factor * 0.2) * 100), 1) 
+        
+        # Calculate confidence range based on the *final* predicted price
+        conf_margin = (100 - confidence_score) / 100
+        conf_low = predicted_future_price * (1 - conf_margin)
+        conf_high = predicted_future_price * (1 + conf_margin)
 
-        ultimate_future_price = predicted_total_price_at_top * ((1 + ANNUAL_GROWTH_RATE) ** FORWARD_YEARS)
-        investment_gain_percent = ((ultimate_future_price - price) / price * 100) if price > 0 else 0
-
-        predicted_price_per_sqm = (ultimate_future_price / floor_area_sqm)
-
-        conf_margin = 0.1
-        conf_low = round(ultimate_future_price * (1 - conf_margin), 2)
-        conf_high = round(ultimate_future_price * (1 + conf_margin), 2)
-        confidence_score = 90.0
-
-        if investment_gain_percent > 20:
-            market_trend = f"**Strong appreciation potential** (+{investment_gain_percent:.1f}% projected investment gain over {FORWARD_YEARS} years)."
-        elif 10 <= investment_gain_percent <= 20:
-            market_trend = f"**Healthy appreciation projected** (+{investment_gain_percent:.1f}% projected investment gain over {FORWARD_YEARS} years)."
-        else:
-            market_trend = f"**Price stability with moderate appreciation expected** ({investment_gain_percent:+.1f}% projected investment gain over {FORWARD_YEARS} years)."
-
+        # === 8️⃣ Compose Result ===
         result = {
-            "model": "future_price_v3_sqft_fixed_3yr",
-            "predicted_total_price": round(ultimate_future_price, 2),
-            "predicted_price_per_sqm": round(predicted_price_per_sqm, 2),
-            "floor_area_sqm": floor_area_sqm,
-            "confidence_low": conf_low,
-            "confidence_high": conf_high,
+            "model": "future_resale_v3_dynamic",
+            "floor_area_sqm": round(floor_area_sqm, 2),
+            "years_forward": YEARS_FORWARD,
+            "predicted_total_price": round(predicted_future_price, 2),
+            "predicted_price_per_sqm": round(predicted_future_price / floor_area_sqm, 2),
+            "confidence_low": round(conf_low, 2),
+            "confidence_high": round(conf_high, 2),
             "confidence_score": confidence_score,
-            "market_trend": market_trend,
-            "total_uplift_percent": round(uplift_percent, 1), 
-            "investment_gain_percent": round(investment_gain_percent, 1), 
-            "projection_horizon": f"{FORWARD_YEARS} years post-TOP ({transaction_year + FORWARD_YEARS})", 
+            "annual_growth_rate": f"{ANNUAL_GROWTH_RATE*100:.2f}%",
+            "market_trend": f"Projected {YEARS_FORWARD:.0f}-year resale appreciation at {ANNUAL_GROWTH_RATE*100:.2f}% annually.",
             "timestamp": datetime.now().isoformat(),
+            "correction_applied": correction_reason # <-- Now includes the dynamic reason
         }
 
-        # ✅ INSERT prediction record into the predictions table
+        # === 9️⃣ Save Prediction (Optional) ===
         try:
-            # Ensure all numeric types are native floats
-            predicted_price = float(result["predicted_total_price"])
-            confidence_low = float(result["confidence_low"])
-            confidence_high = float(result["confidence_high"])
-            confidence_score = float(result["confidence_score"]) / 100
-
             with get_cursor() as cur:
                 cur.execute("""
                     INSERT INTO predictions (
                         property_id,
                         user_id,
-                        email,
                         model_type,
                         predicted_price,
                         confidence_low,
@@ -1763,37 +1871,29 @@ def predict_future():
                         input_data,
                         created_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, [
-                    property_id,
-                    user_id,
-                    prop.get("user_email"),
+                    body.get("property_id"),
+                    body.get("user_id"),
                     str(result["model"]),
-                    predicted_price,
-                    confidence_low,
-                    confidence_high,
-                    confidence_score,
-                    json.dumps(input_data, default=str),
-                    datetime.now()
+                    float(result["predicted_total_price"]),
+                    float(result["confidence_low"]),
+                    float(result["confidence_high"]),
+                    float(result["confidence_score"]) / 100,
+                    json.dumps(X_input.to_dict(), default=str),
+                    datetime.now(),
                 ])
-            print(f"✅ Prediction saved for property_id={property_id}, user_id={user_id}")
-
+            print(f"✅ Future resale prediction saved for property_id={body.get('property_id')}")
         except Exception as e:
-            print(f"⚠️ Warning: Failed to insert prediction into DB: {e}")
-
-        # === ✅ Return result even if insert fails ===
+            print(f"⚠️ Warning: Could not save future resale prediction: {e}")
+        
         return jsonify(result)
 
-
-
-
-
-
     except Exception as e:
-        print(f"[PredictFutureError] {e}") 
-        return jsonify({"error": str(e)}), 400
-
-
+        print(f"[PredictFutureResaleError] {e}")
+        import traceback
+        traceback.print_exc() # Print full error stack
+        return jsonify({"error": "An internal server error occurred.", "details": str(e)}), 500
 
 # ============================================================
 #  Get Prediction History for Logged-in User (Frontend Friendly)
@@ -2420,6 +2520,50 @@ def stripe_webhook():
 
     return jsonify({"received": True})
 
+# --- Get AI prediction for a property ---
+@app.get("/api/predict/<int:property_id>")
+def get_prediction(property_id):
+    try:
+        query = """
+            SELECT 
+                property_id,
+                predicted_price AS predicted_total_price,
+                confidence_low,
+                confidence_high,
+                confidence_score,
+                input_data,
+                created_at
+            FROM predictions
+            WHERE property_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        rows = query_all(query, [property_id])
+        if not rows:
+            return jsonify({"success": False, "message": "No prediction found."}), 404
+
+        pred = rows[0]
+
+        # Decode input data
+        if pred.get("input_data") and isinstance(pred["input_data"], str):
+            try:
+                pred["input_data"] = json.loads(pred["input_data"])
+            except Exception:
+                pred["input_data"] = {}
+
+        # Compute missing fields
+        predicted_price = float(pred["predicted_total_price"])
+        floor_area = float(pred["input_data"].get("floor_area_sqm", 1) or 1)
+
+        pred["predicted_price_per_sqm"] = round(predicted_price / floor_area, 2)
+
+        return jsonify({"success": True, **pred})
+
+    except Exception as e:
+        print("❌ Prediction fetch error:", e)
+        return jsonify({"success": False, "message": "Error fetching prediction."}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
