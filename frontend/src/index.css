@@ -41,3 +41,5 @@ body { margin: 0; font-family: var(--font-sans); background: #f9fafb; color: #11
     margin: 24px auto;
     padding: 0 16px;
 }
+/* Global dark body defaults */
+.dark body { background: #0e1f1b; color: #e3f6f1; }

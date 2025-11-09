@@ -13,6 +13,12 @@ export default function SignUp() {
         password: "",
         confirmPassword: "",
         agreeTerms: false,
+        agencyName: "",
+        ceaRegNo: "",
+        agencyLicenseNo: "",
+        yearsExperience: "",
+        idLast4: "",
+        supportingUrl: "",
     });
 
     const [submitting, setSubmitting] = useState(false);
@@ -24,15 +30,33 @@ export default function SignUp() {
     const [role, setRole] = useState("homeowner");
     const updateRole = (nextRole) => {
         setRole(nextRole);
+        setFieldErrors({});
         onChange({ target: { name: "role", value: nextRole } });
+        if (nextRole === "homeowner") {
+            setForm((s) => ({
+                ...s,
+                agencyName: "",
+                ceaRegNo: "",
+                agencyLicenseNo: "",
+                yearsExperience: "",
+                idLast4: "",
+                supportingUrl: "",
+            }));
+        }
     };
 
     const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
     const PHONE_SG_RE = /^(?:\+65\s?)?(?:[689]\d{7})$/;
+    const CEA_REG_RE = /^R\d{6}[A-Z]$/i;
+    const AGENCY_LICENSE_RE = /^L\d{7}[A-Z]$/i;
+    const ID_LAST4_RE = /^[STFG]\d{3}$/i;
 
     const onChange = (e) => {
         const { name, type, checked, value } = e.target;
         setForm((s) => ({ ...s, [name]: type === "checkbox" ? checked : value }));
+        if (fieldErrors[name]) {
+            setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
+        }
     };
 
     const navigate = useNavigate();
@@ -54,9 +78,55 @@ export default function SignUp() {
         if (!PHONE_SG_RE.test(phoneNorm))
             errs.phone = "Enter a valid Singapore phone number.";
 
+        let normalizedCea = "";
+        let normalizedLicense = "";
+        let normalizedId = "";
+        let parsedYears = null;
+
+        if (role === "agent") {
+            if (!form.agencyName.trim())
+                errs.agencyName = "Enter your agency name.";
+            normalizedCea = form.ceaRegNo.trim().toUpperCase();
+            if (!CEA_REG_RE.test(normalizedCea))
+                errs.ceaRegNo = "Use the format R123456X.";
+            normalizedLicense = form.agencyLicenseNo.trim().toUpperCase();
+            if (!AGENCY_LICENSE_RE.test(normalizedLicense))
+                errs.agencyLicenseNo = "Use the format L7654321X.";
+
+            if (form.yearsExperience === "") {
+                errs.yearsExperience = "Enter your years of experience.";
+            } else {
+                parsedYears = Number.parseInt(form.yearsExperience, 10);
+                if (!Number.isFinite(parsedYears) || parsedYears < 0 || parsedYears > 60) {
+                    errs.yearsExperience = "Enter a value between 0 and 60.";
+                }
+            }
+
+            normalizedId = form.idLast4.trim().toUpperCase();
+            if (normalizedId && !ID_LAST4_RE.test(normalizedId))
+                errs.idLast4 = "Use the prefix letter followed by the last 3 digits (e.g. S123).";
+        }
+
         if (Object.keys(errs).length > 0) {
             setFieldErrors(errs);
             return;
+        }
+
+        const payload = {
+            name: form.name.trim(),
+            email: form.email.trim(),
+            phone: form.phone.trim(),
+            password: form.password,
+            role,
+        };
+
+        if (role === "agent") {
+            payload.agency_name = form.agencyName.trim();
+            payload.cea_reg_no = normalizedCea;
+            payload.agency_license_no = normalizedLicense;
+            payload.years_experience = parsedYears;
+            if (normalizedId) payload.id_last4 = normalizedId;
+            if (form.supportingUrl.trim()) payload.supporting_url = form.supportingUrl.trim();
         }
 
         try {
@@ -64,22 +134,23 @@ export default function SignUp() {
             const res = await fetch(`${API_BASE}/api/register_user`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    name: form.name.trim(),
-                    email: form.email.trim(),
-                    phone: form.phone.trim(),
-                    password: form.password,
-                    role,
-                }),
+                body: JSON.stringify(payload),
             });
+            const data = await res.json().catch(() => null);
+
             if (res.status === 409) {
                 setFieldErrors({
                     email: "An account with that email already exists.",
                 });
                 return;
             }
-            if (!res.ok)
-                throw new Error((await res.text()) || `HTTP ${res.status}`);
+            if (!res.ok) {
+                if (res.status === 400 && data?.field) {
+                    setFieldErrors({ [data.field]: data.error });
+                    return;
+                }
+                throw new Error((data && data.error) || `HTTP ${res.status}`);
+            }
 
             if (role === "agent") {
                 setError(
@@ -96,6 +167,7 @@ export default function SignUp() {
             setSubmitting(false);
         }
     };
+
 
     // Google signup
     async function handleGoogleSignup(credentialResponse) {
@@ -260,7 +332,7 @@ export default function SignUp() {
                                         required
                                         minLength={8}
                                         className="w-full px-3 py-2 pr-12 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
-                                        placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                                        placeholder="••••••••"
                                     />
                                     <button
                                         type="button"
@@ -292,7 +364,7 @@ export default function SignUp() {
                                         required
                                         minLength={8}
                                         className="w-full px-3 py-2 pr-12 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
-                                        placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                                        placeholder="••••••••"
                                     />
                                     <button
                                         type="button"
@@ -305,6 +377,165 @@ export default function SignUp() {
                                     </button>
                                 </div>
                             </div>
+
+
+                            {role === "agent" && (
+                                <div className="border-t border-gray-200 pt-4 space-y-4">
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-gray-700">
+                                            Property Agent Verification
+                                        </h3>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Provide your CEA credentials so we can verify your account before activation.
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="agencyName"
+                                            className="block text-sm font-medium text-gray-700"
+                                        >
+                                            Agency name
+                                        </label>
+                                        <div className="mt-1">
+                                            <input
+                                                id="agencyName"
+                                                name="agencyName"
+                                                value={form.agencyName}
+                                                onChange={onChange}
+                                                required
+                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                                placeholder="Your agency / brokerage"
+                                            />
+                                        </div>
+                                        {fieldErrors.agencyName && (
+                                            <span className="text-sm text-red-600 mt-1 block">
+                                                {fieldErrors.agencyName}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="ceaRegNo"
+                                            className="block text-sm font-medium text-gray-700"
+                                        >
+                                            CEA registration number
+                                        </label>
+                                        <div className="mt-1">
+                                            <input
+                                                id="ceaRegNo"
+                                                name="ceaRegNo"
+                                                value={form.ceaRegNo}
+                                                onChange={onChange}
+                                                required
+                                                maxLength={8}
+                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 uppercase"
+                                                placeholder="R123456X"
+                                            />
+                                        </div>
+                                        {fieldErrors.ceaRegNo && (
+                                            <span className="text-sm text-red-600 mt-1 block">
+                                                {fieldErrors.ceaRegNo}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="agencyLicenseNo"
+                                            className="block text-sm font-medium text-gray-700"
+                                        >
+                                            Agency licence number
+                                        </label>
+                                        <div className="mt-1">
+                                            <input
+                                                id="agencyLicenseNo"
+                                                name="agencyLicenseNo"
+                                                value={form.agencyLicenseNo}
+                                                onChange={onChange}
+                                                required
+                                                maxLength={9}
+                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 uppercase"
+                                                placeholder="L7654321X"
+                                            />
+                                        </div>
+                                        {fieldErrors.agencyLicenseNo && (
+                                            <span className="text-sm text-red-600 mt-1 block">
+                                                {fieldErrors.agencyLicenseNo}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="yearsExperience"
+                                            className="block text-sm font-medium text-gray-700"
+                                        >
+                                            Years of experience
+                                        </label>
+                                        <div className="mt-1">
+                                            <input
+                                                id="yearsExperience"
+                                                name="yearsExperience"
+                                                type="number"
+                                                min={0}
+                                                max={60}
+                                                step={1}
+                                                value={form.yearsExperience}
+                                                onChange={onChange}
+                                                required
+                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                                placeholder="e.g. 5"
+                                            />
+                                        </div>
+                                        {fieldErrors.yearsExperience && (
+                                            <span className="text-sm text-red-600 mt-1 block">
+                                                {fieldErrors.yearsExperience}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="idLast4"
+                                            className="block text-sm font-medium text-gray-700"
+                                        >
+                                            NRIC / FIN prefix + last 3 digits (optional)
+                                        </label>
+                                        <div className="mt-1">
+                                            <input
+                                                id="idLast4"
+                                                name="idLast4"
+                                                value={form.idLast4}
+                                                onChange={onChange}
+                                                maxLength={4}
+                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 uppercase"
+                                                placeholder="S123"
+                                            />
+                                        </div>
+                                        {fieldErrors.idLast4 && (
+                                            <span className="text-sm text-red-600 mt-1 block">
+                                                {fieldErrors.idLast4}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="supportingUrl"
+                                            className="block text-sm font-medium text-gray-700"
+                                        >
+                                            Supporting document URL (optional)
+                                        </label>
+                                        <div className="mt-1">
+                                            <input
+                                                id="supportingUrl"
+                                                name="supportingUrl"
+                                                type="url"
+                                                value={form.supportingUrl}
+                                                onChange={onChange}
+                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                                placeholder="https://drive.google.com/..."
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Terms */}
                             <div className="flex items-start gap-2">
@@ -358,12 +589,18 @@ export default function SignUp() {
                         </div>
 
                         {/* Google Sign-up button */}
-                        <div className="flex justify-center">
-                            <GoogleLogin
-                                onSuccess={handleGoogleSignup}
-                                onError={() => setError("Google Sign-up Failed")}
-                            />
-                        </div>
+                        {role === "agent" ? (
+                            <p className="text-sm text-gray-500 text-center">
+                                Google sign-up is unavailable for Property Agents. Please complete the verification form above.
+                            </p>
+                        ) : (
+                            <div className="flex justify-center">
+                                <GoogleLogin
+                                    onSuccess={handleGoogleSignup}
+                                    onError={() => setError("Google Sign-up Failed")}
+                                />
+                            </div>
+                        )}
 
                         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
                     </div>

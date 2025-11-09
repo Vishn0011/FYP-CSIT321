@@ -1,5 +1,5 @@
 // src/AuthContext.jsx
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 
 const AuthContext = createContext();
 
@@ -18,15 +18,37 @@ export function AuthProvider({ children }) {
         }
     }, []);
 
+    const setUserData = useCallback((nextUserOrUpdater) => {
+        if (typeof nextUserOrUpdater === "function") {
+            setUser((prev) => {
+                const resolved = nextUserOrUpdater(prev);
+                if (resolved) {
+                    localStorage.setItem("user", JSON.stringify(resolved));
+                    return resolved;
+                }
+                localStorage.removeItem("user");
+                return null;
+            });
+            return;
+        }
+
+        if (nextUserOrUpdater) {
+            localStorage.setItem("user", JSON.stringify(nextUserOrUpdater));
+            setUser(nextUserOrUpdater);
+        } else {
+            localStorage.removeItem("user");
+            setUser(null);
+        }
+    }, [setUser]);
+
     const login = (user, token) => {
         if (user) {
-            localStorage.setItem("user", JSON.stringify(user));
-            setUser(user);
+            setUserData(user);
         }
         if (token) {
             localStorage.setItem("token", token);
         } else {
-            localStorage.removeItem("token"); // don’t store "undefined"
+            localStorage.removeItem("token"); // don't store "undefined"
         }
     };
 
@@ -37,7 +59,7 @@ export function AuthProvider({ children }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, logout }}>
+        <AuthContext.Provider value={{ user, login, logout, updateUser: setUserData }}>
             {children}
         </AuthContext.Provider>
     );

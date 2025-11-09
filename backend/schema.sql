@@ -76,3 +76,24 @@ CREATE TABLE IF NOT EXISTS properties (
 INSERT INTO properties (agent_id, size, location, floor, age)
 VALUES (1, 1200, 'Orchard Road, District 9', 10, 5)
 ON CONFLICT DO NOTHING;
+
+-- Saved properties for homeowners
+-- A simple pivot table that tracks which user saved which property.
+-- Enforces uniqueness so the same property is not saved twice by a user.
+CREATE TABLE IF NOT EXISTS saved_properties (
+  user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  property_id INT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, property_id)
+);
+-- Property agent verification submissions
+CREATE TABLE IF NOT EXISTS agent_applications (
+  user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  cea_reg_no TEXT NOT NULL,
+  agency_name TEXT NOT NULL,
+  agency_license_no TEXT NOT NULL,
+  years_experience INT,
+  id_last4 TEXT,
+  supporting_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

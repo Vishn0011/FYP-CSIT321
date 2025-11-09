@@ -16,24 +16,31 @@ export default function Nav() {
       <div className="font-bold text-xl tracking-wide">Aspect Real Estate</div>
 
       <div className="flex gap-6 items-center">
-        <Link to="/agents" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
-          Agents
-        </Link>
-        <Link to="/predict" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
-          Predict
-        </Link>
-        <Link to="/dashboard" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
-          Dashboard
-        </Link>
-        <Link to="/compare" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
-          Compare
-        </Link>
-        <Link to="/reports" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
-          Reports
-        </Link>
-        <Link to="/properties" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
-          Properties
-        </Link>
+        {user ? (
+          <>
+            <Link to="/agents" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
+              Agents
+            </Link>
+            <Link to="/predict" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
+              Predict
+            </Link>
+            <Link to="/compare" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
+              Compare
+            </Link>
+            <Link to="/reports" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
+              Reports
+            </Link>
+            <Link to="/properties" className="hover:text-emerald-200 dark:hover:text-emerald-100 transition">
+              Properties
+            </Link>
+            <Link
+              to={user?.role === "homeowner" ? "/homeowner/search" : "/dashboard"}
+              className="hover:text-emerald-200 dark:hover:text-emerald-100 transition"
+            >
+              Dashboard
+            </Link>
+          </>
+        ) : null}
 
         {/* Right side: theme toggle + auth actions */}
         <div className="ml-6 flex items-center gap-3">
@@ -55,9 +62,13 @@ export default function Nav() {
             </div>
           ) : (
             <div className="flex items-center gap-4">
-              <span className="bg-white text-emerald-700 dark:text-emerald-900 px-3 py-2 rounded-lg font-semibold shadow">
+              <Link
+                to="/profile"
+                className="bg-white text-emerald-700 dark:text-emerald-900 px-3 py-2 rounded-lg font-semibold shadow hover:bg-emerald-50 dark:hover:bg-emerald-800/60 transition"
+                title="Manage your profile"
+              >
                 {user.name || user.email}
-              </span>
+              </Link>
               <button
                 onClick={handleLogout}
                 className="bg-red-500 text-white px-4 py-2 rounded-lg font-semibold shadow hover:bg-red-600 transition"
@@ -71,3 +82,4 @@ export default function Nav() {
     </nav>
   );
 }
+
