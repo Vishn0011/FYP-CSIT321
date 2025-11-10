@@ -6,10 +6,17 @@ import App from "./App.jsx";
 
 const clientId = "98981474983-d5h2shgl18u6oovn378q3ovao61jtbm0.apps.googleusercontent.com";
 
-createRoot(document.getElementById("root")).render(
+/*createRoot(document.getElementById("root")).render(
     <React.StrictMode>
         <GoogleOAuthProvider clientId={clientId}>
             <App />
         </GoogleOAuthProvider>
     </React.StrictMode>
+);*/
+
+createRoot(document.getElementById("root")).render(
+    <GoogleOAuthProvider clientId={clientId}>
+        <App />
+    </GoogleOAuthProvider>
 );
+
