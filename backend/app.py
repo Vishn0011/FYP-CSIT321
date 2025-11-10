@@ -26,10 +26,12 @@ import requests
 from psycopg2 import OperationalError
 import stripe
 from decimal import Decimal
+from pathlib import Path
 
 load_dotenv()
 app = Flask(__name__)
 
+BASE_DIR = Path(__file__).resolve().parent
 geo_bp = Blueprint("geo", __name__)
 GOOGLE_API_KEY = "AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw"
 CLIENT_ID = "98981474983-d5h2shgl18u6oovn378q3ovao61jtbm0.apps.googleusercontent.com"  # same as frontend
@@ -51,8 +53,11 @@ ENCODER_PATHS = {
     "geo_cluster": os.path.join(MODEL_DIR, "geo_cluster_encoder.joblib"),
 }
 
-DATA_PATH = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\excel\Cleaned_Merged_Property_Transactions_v2.xlsx"
-CACHE_FILE = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\cache\growth_rates.json"
+#DATA_PATH = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\excel\Cleaned_Merged_Property_Transactions_v2.xlsx"
+DATA_PATH = BASE_DIR / "excel" / "Cleaned_Merged_Property_Transactions_v2.xlsx"
+#CACHE_FILE = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\cache\growth_rates.json"
+CACHE_DIR = BASE_DIR / "cache"
+CACHE_FILE = CACHE_DIR / "growth_rates.json"
 LAGS_PATH = "cache/regional_lags.json"
 
 def load_growth_rates(file_path: str):
@@ -102,7 +107,7 @@ def load_growth_rates(file_path: str):
                 growth_dict[region.title()] = round(cagr_smoothed, 4)
 
     # ✅ 3. Save to cache for next startup
-    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+    os.makedirs(CACHE_DIR, exist_ok=True)
     with open(CACHE_FILE, "w") as f:
         json.dump(growth_dict, f, indent=4)
 
