@@ -471,8 +471,6 @@ def user_stats():
         "recent": recent
     })
 
-
-
 #list features that are active
 @app.get("/api/features")
 def get_features():
@@ -1037,6 +1035,52 @@ def delete_property(prop_id):
 
 # ---User Registration---
 @app.post("/api/register_user")
+#def register_user():
+#    body = request.get_json(force=True) or {}
+#    name = (body.get("name") or "").strip()
+#    email = (body.get("email") or "").strip().lower()
+#    phone = (body.get("phone") or "").strip()
+#    role = (body.get("role") or "").strip().lower()
+#    password = body.get("password") or ""
+#
+#    try:
+#        with get_conn() as conn, conn.cursor() as cur:
+#            cur.execute(
+#                """
+#                INSERT INTO users
+#                  (email, password_hash, name, role, phone)
+#                VALUES (%s, crypt(%s, gen_salt('bf')), %s, %s, %s)
+#                ON CONFLICT (email) DO NOTHING
+#                RETURNING id, email, name, role, phone;
+#                """,
+#                (email, password, name, role, phone),
+#            )
+#            row = cur.fetchone()
+#
+#        if not row:
+#            return jsonify({"ok": False, "error": "Email already exists"}), 409
+#
+#        # Build user dict from row
+#        if isinstance(row, dict):
+#            user = row
+#        else:
+#            user = {
+#                "id": row[0],
+#                "email": row[1],
+#                "name": row[2],
+#                "role": row[3],
+#                "phone": row[4],
+#            }
+#
+#        # TODO: generate real token here (JWT etc.)
+#        return jsonify({"ok": True, "user": user, "token": None}), 201
+#
+#    except Exception as e:
+#        import traceback
+#        traceback.print_exc()
+#        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.post("/api/register_user")
 def register_user():
     body = request.get_json(force=True) or {}
     name = (body.get("name") or "").strip()
@@ -1046,7 +1090,7 @@ def register_user():
     password = body.get("password") or ""
 
     try:
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO users
@@ -1062,25 +1106,16 @@ def register_user():
         if not row:
             return jsonify({"ok": False, "error": "Email already exists"}), 409
 
-        # Build user dict from row
-        if isinstance(row, dict):
-            user = row
-        else:
-            user = {
-                "id": row[0],
-                "email": row[1],
-                "name": row[2],
-                "role": row[3],
-                "phone": row[4],
-            }
+        # row is a RealDictRow because of get_cursor()
+        user = dict(row)
 
-        # TODO: generate real token here (JWT etc.)
         return jsonify({"ok": True, "user": user, "token": None}), 201
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
+
 
 # --- Search properties for homebuyers (protected) ---
 @app.get("/api/homeowner/properties")
@@ -1137,6 +1172,40 @@ def homebuyer_properties():
 
 
 # ---Add Dropdown Option---
+#@app.post("/api/options/<option_type>")
+#def add_dropdown_option(option_type):
+#    body = request.get_json(force=True) or {}
+#    name = (body.get("name") or "").strip()
+#    status = (body.get("status") or "active").strip().lower()
+#
+#    if not name:
+#        return jsonify({"ok": False, "error": "Name is required"}), 400
+#
+#    try:
+#        with get_conn() as conn, conn.cursor() as cur:
+#            cur.execute(
+#                """
+#                INSERT INTO dropdown_options (type, name, status)
+#                VALUES (%s, %s, %s)
+#                RETURNING id, type, name, status;
+#                """,
+#                (option_type, name, status),
+#            )
+#            row = cur.fetchone()
+#
+#        option = {
+#            "id": row[0],
+#            "type": row[1],
+#            "name": row[2],
+#            "status": row[3],
+#        }
+#        return jsonify({"ok": True, "option": option}), 201
+#
+#    except Exception as e:
+#        import traceback
+#        traceback.print_exc()
+#        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.post("/api/options/<option_type>")
 def add_dropdown_option(option_type):
     body = request.get_json(force=True) or {}
@@ -1147,7 +1216,8 @@ def add_dropdown_option(option_type):
         return jsonify({"ok": False, "error": "Name is required"}), 400
 
     try:
-        with get_conn() as conn, conn.cursor() as cur:
+        # use shared connection + RealDictCursor
+        with get_cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO dropdown_options (type, name, status)
@@ -1158,11 +1228,14 @@ def add_dropdown_option(option_type):
             )
             row = cur.fetchone()
 
+        if not row:
+            return jsonify({"ok": False, "error": "Insert failed"}), 500
+
         option = {
-            "id": row[0],
-            "type": row[1],
-            "name": row[2],
-            "status": row[3],
+            "id": row["id"],
+            "type": row["type"],
+            "name": row["name"],
+            "status": row["status"],
         }
         return jsonify({"ok": True, "option": option}), 201
 
@@ -1171,11 +1244,40 @@ def add_dropdown_option(option_type):
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
+
 # ---Get Dropdown Options---
+#@app.get("/api/options/<option_type>")
+#def get_dropdown_options(option_type):
+#    try:
+#        with get_conn() as conn, conn.cursor() as cur:
+#            cur.execute(
+#                """
+#                SELECT id, name, status
+#                FROM dropdown_options
+#                WHERE type = %s
+#                ORDER BY id ASC;
+#                """,
+#                (option_type,),
+#            )
+#            rows = cur.fetchall()
+#
+#        # rows are dicts, use keys
+#        options = [
+#            {"id": r["id"], "name": r["name"], "status": r["status"]}
+#            for r in rows
+#        ]
+#
+#        return jsonify({"ok": True, "options": options}), 200
+#
+#    except Exception as e:
+#        import traceback
+#        traceback.print_exc()
+#        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.get("/api/options/<option_type>")
 def get_dropdown_options(option_type):
     try:
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute(
                 """
                 SELECT id, name, status
@@ -1187,7 +1289,7 @@ def get_dropdown_options(option_type):
             )
             rows = cur.fetchall()
 
-        # rows are dicts, use keys
+        # rows are dicts from RealDictCursor
         options = [
             {"id": r["id"], "name": r["name"], "status": r["status"]}
             for r in rows
@@ -1201,18 +1303,54 @@ def get_dropdown_options(option_type):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-
 # ---Update Dropdown Option Status---
+#@app.put("/api/options/<int:option_id>/status")
+#def update_dropdown_status(option_id):
+#    body = request.get_json(force=True) or {}
+#    status = (body.get("status") or "").strip().lower()
+#
+#    if status not in ["active", "inactive"]:
+#        return jsonify({"ok": False, "error": "Invalid status"}), 400
+#
+#    try:
+#        with get_conn() as conn, conn.cursor() as cur:
+#            cur.execute(
+#                """
+#                UPDATE dropdown_options
+#                SET status = %s
+#                WHERE id = %s
+#                RETURNING id, type, name, status;
+#                """,
+#                (status, option_id),
+#            )
+#            row = cur.fetchone()
+#
+#        if not row:
+#            return jsonify({"ok": False, "error": "Option not found"}), 404
+#
+#        option = {
+#            "id": row["id"],
+#            "type": row["type"],
+#            "name": row["name"],
+#            "status": row["status"],
+#        }
+#        return jsonify({"ok": True, "option": option}), 200
+#
+#    except Exception as e:
+#        import traceback
+#        traceback.print_exc()
+#        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.put("/api/options/<int:option_id>/status")
 def update_dropdown_status(option_id):
     body = request.get_json(force=True) or {}
     status = (body.get("status") or "").strip().lower()
 
-    if status not in ["active", "inactive"]:
+    if status not in ("active", "inactive"):
         return jsonify({"ok": False, "error": "Invalid status"}), 400
 
     try:
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_cursor() as cur:
             cur.execute(
                 """
                 UPDATE dropdown_options
@@ -1239,6 +1377,7 @@ def update_dropdown_status(option_id):
         import traceback
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
+
 
 # create enquiry
 @app.post("/api/enquiries")
