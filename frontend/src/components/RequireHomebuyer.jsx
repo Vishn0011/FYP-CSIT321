@@ -1,9 +1,13 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 
-export default function RequireHomebuyer
-    ({ children }) {
-    const { user } = useAuth();
+export default function RequireHomebuyer({ children }) {
+    const { user, loading } = useAuth();
+
+    if (loading) {
+        // still checking localStorage ¡÷ temporarily show nothing or spinner
+        return <div>Loading...</div>;
+    }
 
     if (!user) {
         // not logged in ¡÷ go to login

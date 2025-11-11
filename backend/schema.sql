@@ -86,6 +86,12 @@ CREATE TABLE IF NOT EXISTS saved_properties (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (user_id, property_id)
 );
+
+CREATE TABLE IF NOT EXISTS homeowner_preferences (
+  user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  preferences JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 -- Property agent verification submissions
 CREATE TABLE IF NOT EXISTS agent_applications (
   user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

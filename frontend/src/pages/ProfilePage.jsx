@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
+import HomeownerPreferenceForm, {
+    ensurePreferenceShape,
+} from "../components/HomeownerPreferenceForm";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -26,6 +29,11 @@ export default function ProfilePage() {
     const [passwords, setPasswords] = useState(initialPasswords);
     const [savingProfile, setSavingProfile] = useState(false);
     const [savingPassword, setSavingPassword] = useState(false);
+    const [prefDraft, setPrefDraft] = useState(() => ensurePreferenceShape());
+    const [prefLoading, setPrefLoading] = useState(user?.role === "homeowner");
+    const [prefSaving, setPrefSaving] = useState(false);
+    const [prefError, setPrefError] = useState(null);
+    const [prefSuccess, setPrefSuccess] = useState(null);
 
     useEffect(() => {
         setProfile((prev) => ({
@@ -77,6 +85,53 @@ export default function ProfilePage() {
 
         loadProfile();
     }, [updateUser]);
+
+    useEffect(() => {
+        let ignore = false;
+
+        async function loadPreferences() {
+            if (user?.role !== "homeowner") {
+                setPrefLoading(false);
+                return;
+            }
+
+            const currentToken = localStorage.getItem("token");
+            if (!currentToken) {
+                setPrefLoading(false);
+                return;
+            }
+
+            try {
+                setPrefLoading(true);
+                setPrefError(null);
+                const res = await fetch(`${API_BASE}/api/homeowner/preferences`, {
+                    headers: { Authorization: `Bearer ${currentToken}` },
+                });
+                const data = await res.json().catch(() => ({}));
+                if (ignore) return;
+                if (res.ok && data?.preferences) {
+                    setPrefDraft(ensurePreferenceShape(data.preferences));
+                } else if (res.ok) {
+                    setPrefDraft(ensurePreferenceShape());
+                } else {
+                    throw new Error(data?.error || "Unable to load preferences");
+                }
+            } catch (err) {
+                if (!ignore) {
+                    setPrefError(err.message || "Unable to load preferences");
+                }
+            } finally {
+                if (!ignore) {
+                    setPrefLoading(false);
+                }
+            }
+        }
+
+        loadPreferences();
+        return () => {
+            ignore = true;
+        };
+    }, [user?.role]);
 
     const handleProfileChange = (field, value) => {
         setProfile((prev) => ({
@@ -140,6 +195,43 @@ export default function ProfilePage() {
             setProfileError(err.message || "Failed to update profile");
         } finally {
             setSavingProfile(false);
+        }
+    };
+
+    const handlePreferenceSubmit = async (nextPrefs) => {
+        if (user?.role !== "homeowner") return;
+
+        const currentToken = localStorage.getItem("token");
+        if (!currentToken) {
+            setPrefError("Session expired. Please log in again.");
+            return;
+        }
+
+        setPrefError(null);
+        setPrefSuccess(null);
+        setPrefSaving(true);
+
+        try {
+            const res = await fetch(`${API_BASE}/api/homeowner/preferences`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${currentToken}`,
+                },
+                body: JSON.stringify({ preferences: nextPrefs }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data?.error || "Unable to save preferences");
+            }
+            const normalized = ensurePreferenceShape(data?.preferences || nextPrefs);
+            setPrefDraft(normalized);
+            setPrefSuccess("Preferences updated");
+            window.dispatchEvent(new Event("homeowner-preferences:updated"));
+        } catch (err) {
+            setPrefError(err.message || "Unable to save preferences");
+        } finally {
+            setPrefSaving(false);
         }
     };
 
@@ -327,6 +419,44 @@ export default function ProfilePage() {
                         </div>
                     </form>
                 </section>
+
+                {user?.role === "homeowner" && (
+                    <section className="bg-white dark:bg-zinc-800 shadow rounded-xl p-6 space-y-6">
+                        <div>
+                            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                                Property Preferences
+                            </h2>
+                            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                                Keep your dashboard recommendations tailored to what matters most.
+                            </p>
+                        </div>
+
+                        {prefError && (
+                            <div className="rounded border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                                {prefError}
+                            </div>
+                        )}
+
+                        {prefSuccess && (
+                            <div className="rounded border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+                                {prefSuccess}
+                            </div>
+                        )}
+
+                        {prefLoading ? (
+                            <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading preferences...</p>
+                        ) : (
+                            <HomeownerPreferenceForm
+                                value={prefDraft}
+                                onChange={setPrefDraft}
+                                onSubmit={handlePreferenceSubmit}
+                                submitting={prefSaving}
+                                showHeader={false}
+                                submitLabel="Save preferences"
+                            />
+                        )}
+                    </section>
+                )}
 
                 <section className="bg-white dark:bg-zinc-800 shadow rounded-xl p-6 space-y-6">
                     <div>

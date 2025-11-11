@@ -1,0 +1,27 @@
+{
+    "Central":{
+        "price_lag_1":1220000.0,
+        "price_lag_3":1508888.0,
+        "price_lag_6":1618000.0
+    },
+    "East":{
+        "price_lag_1":1387000.0,
+        "price_lag_3":1480000.0,
+        "price_lag_6":1557000.0
+    },
+    "North":{
+        "price_lag_1":1585000.0,
+        "price_lag_3":988000.0,
+        "price_lag_6":1450000.0
+    },
+    "North-East":{
+        "price_lag_1":1468888.0,
+        "price_lag_3":1550000.0,
+        "price_lag_6":1200000.0
+    },
+    "West":{
+        "price_lag_1":1673000.0,
+        "price_lag_3":1316000.0,
+        "price_lag_6":1200000.0
+    }
+}

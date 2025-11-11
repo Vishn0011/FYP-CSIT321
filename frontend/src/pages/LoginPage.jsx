@@ -29,19 +29,15 @@ export default function LoginPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password: pw, role }),
             });
-
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data?.error || "Invalid credentials");
 
+            // persist login
             login(data.user, data.token);
 
-            if (data.user.role === "agent") {
-                nav("/properties");
-            } else if (data.user.role === "homeowner") {
-                nav("/homeowner/search");
-            } else {
-                nav("/");
-            }
+            // redirect based on role
+            if (data.user.role === "agent") nav("/properties");
+            else nav("/homeowner/search");
         } catch (e) {
             setErr(e.message || "Login failed");
         } finally {
@@ -49,6 +45,7 @@ export default function LoginPage() {
         }
     }
 
+    // === Google login handler ===
     async function handleGoogleLogin(credentialResponse) {
         try {
             const token = credentialResponse.credential;
@@ -60,13 +57,11 @@ export default function LoginPage() {
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || "Google login failed");
 
+            // persist login
             login(data.user, data.token);
 
-            if (data.user.role === "agent") {
-                nav("/properties");
-            } else {
-                nav("/homeowner/search");
-            }
+            if (data.user.role === "agent") nav("/properties");
+            else nav("/homeowner/search");
         } catch (err) {
             setErr(err.message);
         }
@@ -111,31 +106,22 @@ export default function LoginPage() {
                         {/* Normal login form */}
                         <form className="space-y-6" onSubmit={onSubmit}>
                             <div>
-                                <label
-                                    htmlFor="email"
-                                    className="block text-sm font-medium text-gray-700"
-                                >
+                                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                                     Email address
                                 </label>
-                                <div className="mt-1">
-                                    <input
-                                        id="email"
-                                        type="email"
-                                        autoComplete="email"
-                                        required
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="you@example.com"
-                                    />
-                                </div>
+                                <input
+                                    id="email"
+                                    type="email"
+                                    autoComplete="email"
+                                    required
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                />
                             </div>
 
                             <div>
-                                <label
-                                    htmlFor="password"
-                                    className="block text-sm font-medium text-gray-700"
-                                >
+                                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                                     Password
                                 </label>
                                 <div className="mt-1 relative">
@@ -144,10 +130,9 @@ export default function LoginPage() {
                                         required
                                         type={showPw ? "text" : "password"}
                                         autoComplete="current-password"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 pr-12"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 pr-12"
                                         value={pw}
                                         onChange={(e) => setPw(e.target.value)}
-                                        placeholder="••••••••"
                                     />
                                     <button
                                         type="button"
@@ -166,12 +151,11 @@ export default function LoginPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full flex justify-center py-3 px-4 rounded-lg text-sm font-medium text-white bg-emerald-800 hover:bg-emerald-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-700 disabled:opacity-60"
+                                className="w-full py-3 px-4 rounded-lg text-sm font-medium text-white bg-emerald-800 hover:bg-emerald-900 focus:ring-2 focus:ring-emerald-700"
                             >
                                 {loading
                                     ? "Signing in…"
-                                    : `Sign in as ${role === "agent" ? "Property Agent" : "Homeowner"
-                                    }`}
+                                    : `Sign in as ${role === "agent" ? "Property Agent" : "Homeowner"}`}
                             </button>
                         </form>
 
@@ -190,36 +174,8 @@ export default function LoginPage() {
                             />
                         </div>
                     </div>
-
-                    <div className="text-center text-sm text-gray-600">
-                        <p>
-                            Don’t have an account?{" "}
-                            <Link
-                                className="font-medium text-emerald-800 hover:text-emerald-900"
-                                to="/register"
-                            >
-                                Create account
-                            </Link>
-                        </p>
-                        <p className="mt-2">
-                            <Link
-                                className="text-xs text-gray-500 hover:text-gray-700"
-                                to="/admin/login"
-                            >
-                                Admin login
-                            </Link>
-                        </p>
-                    </div>
                 </div>
             </main>
-
-            <footer className="bg-gray-100 py-4">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <p className="text-center text-sm text-gray-500">
-                        © 2025 Aspect Real Estate. All Rights Reserved.
-                    </p>
-                </div>
-            </footer>
         </div>
     );
 }
