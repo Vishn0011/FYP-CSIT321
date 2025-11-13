@@ -24,6 +24,7 @@ import {
     Hospital,
     Trees,
     Briefcase,
+    LineChart as LineChartIcon, // Renamed to avoid conflict
 } from "lucide-react";
 import {
     LineChart,
@@ -46,11 +47,15 @@ export default function PropertyDetails() {
     console.log("🧭 Property ID from URL:", id);
 
     const [property, setProperty] = useState(null);
-    const [aiInsights, setAiInsights] = useState(null);
-    const [history, setHistory] = useState([]); // ✅ Added state for history
+    // --- 🚀 MODIFIED STATE ---
+    // We now store two separate insights: one for current, one for future.
+    const [aiCurrentInsight, setAiCurrentInsight] = useState(null);
+    const [aiFutureInsight, setAiFutureInsight] = useState(null);
+    // --------------------------
+    const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
-    const [editingMessage, setEditingMessage] = useState(null); // State for edit messages
+    const [editingMessage, setEditingMessage] = useState(null);
     const [form, setForm] = useState({
         buyer_name: "",
         buyer_email: "",
@@ -61,11 +66,8 @@ export default function PropertyDetails() {
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     const userRole = user?.role || "guest";
     const galleryRef = useRef(null);
-
-    // --- State for displayed photos ---
     const [displayPhotos, setDisplayPhotos] = useState([]);
 
-    // --- Scroll gallery ---
     function scrollGallery(direction) {
         if (galleryRef.current) {
             const scrollAmount = galleryRef.current.clientWidth * 0.8;
@@ -76,45 +78,33 @@ export default function PropertyDetails() {
         }
     }
 
-    // --- Fetch property details ---
+    // --- Fetch property details (Unchanged) ---
     useEffect(() => {
         api
             .get(`/properties/${id}`)
             .then((res) => {
                 setProperty(res.data);
-
                 let fetchedPhotos = [];
                 const rawPhotos = res.data.photos;
-
                 try {
                     if (rawPhotos) {
                         if (Array.isArray(rawPhotos)) {
-                            // Already a valid array
                             fetchedPhotos = rawPhotos;
                         } else if (typeof rawPhotos === "string") {
                             let cleaned = rawPhotos.trim();
-
-                            // ✅ Handle invalid "[data:image...]" (not real JSON)
                             if (cleaned.startsWith("[data:image")) {
-                                // Remove [ ] and split on commas between data URLs
                                 cleaned = cleaned.slice(1, -1);
                                 fetchedPhotos = cleaned.split("data:image").map((p, i) => {
                                     if (!p.trim()) return null;
                                     return `data:image${p.trim().startsWith(",") ? p : "," + p.trim()}`;
                                 }).filter(Boolean);
                             }
-
-                            // ✅ Handle valid JSON-encoded arrays
                             else if (cleaned.startsWith("[")) {
                                 fetchedPhotos = JSON.parse(cleaned);
                             }
-
-                            // ✅ Handle single data:image strings
                             else if (cleaned.startsWith("data:image")) {
                                 fetchedPhotos = [cleaned];
                             }
-
-                            // ✅ Handle comma-separated plain URLs
                             else {
                                 fetchedPhotos = cleaned.split(",").map((x) => x.trim());
                             }
@@ -124,7 +114,6 @@ export default function PropertyDetails() {
                     console.warn("⚠️ Failed to parse photos field:", err);
                     fetchedPhotos = [];
                 }
-
                 console.log("🖼️ Parsed Photos:", fetchedPhotos);
                 setDisplayPhotos(fetchedPhotos);
             })
@@ -133,7 +122,7 @@ export default function PropertyDetails() {
     }, [id]);
 
 
-    // --- Fetch AI insights (from predictions table) ---
+    // --- 🚀 MODIFIED: Fetch AI insights (from predictions table) ---
     useEffect(() => {
         if (!property || !id) return;
 
@@ -141,28 +130,54 @@ export default function PropertyDetails() {
 
         const fetchAIInsights = async () => {
             try {
-                const res = await api.get(`/predictions/property/${id}`); // ✅ new API route
+                const res = await api.get(`/predictions/property/${id}`);
+
                 if (res.data && res.data.length > 0) {
-                    const latestPrediction = res.data[res.data.length - 1]; // ✅ get most recent
-                    setAiInsights(latestPrediction);
-                    console.log("✅ Loaded AI insights from DB:", latestPrediction);
+                    // --- NEW LOGIC ---
+                    // Find the most recent "current" price prediction
+                    const current = [...res.data].reverse().find(p =>
+                        p.model_type && p.model_type.includes("current")
+                    );
+                    // Find the most recent "future" price prediction
+                    const future = [...res.data].reverse().find(p =>
+                        p.model_type && p.model_type.includes("future")
+                    );
+
+                    if (current) {
+                        setAiCurrentInsight(current);
+                        console.log("✅ Loaded CURRENT AI insight from DB:", current);
+                    } else {
+                        console.log("⚠️ No CURRENT AI prediction found.");
+                        setAiCurrentInsight({ error: true });
+                    }
+
+                    if (future) {
+                        setAiFutureInsight(future);
+                        console.log("✅ Loaded FUTURE AI insight from DB:", future);
+                    } else {
+                        console.log("⚠️ No FUTURE AI prediction found.");
+                        setAiFutureInsight({ error: true });
+                    }
+                    // --- END NEW LOGIC ---
+
                 } else {
-                    console.log("⚠️ No AI prediction found for this property.");
-                    setAiInsights({ error: true });
+                    console.log("⚠️ No AI predictions found for this property.");
+                    setAiCurrentInsight({ error: true });
+                    setAiFutureInsight({ error: true });
                 }
             } catch (err) {
                 console.error("❌ Error fetching AI insights:", err);
-                setAiInsights({ error: true });
+                setAiCurrentInsight({ error: true });
+                setAiFutureInsight({ error: true });
             }
         };
 
         fetchAIInsights();
     }, [property, id]);
+    // -----------------------------------------------------------------
 
 
-
-
-    // ✅ Fetch Location-Based Prediction History
+    // ✅ Fetch Location-Based Prediction History (Unchanged)
     useEffect(() => {
         if (!property?.latitude || !property?.longitude) return;
 
@@ -186,8 +201,6 @@ export default function PropertyDetails() {
     }, [property]);
 
 
-
-
     if (loading) {
         return <p style={{ padding: "20px" }}>Loading property details...</p>;
     }
@@ -196,10 +209,8 @@ export default function PropertyDetails() {
         return <p style={{ padding: "20px" }}>Property not found.</p>;
     }
 
-    // Use the mutable state for photos array in rendering
     const photos = displayPhotos;
 
-    // --- Activity bar width helper ---
     const getActivityWidth = (activity) => {
         if (activity === "Highly responsive") return "100%";
         if (activity === "Active this week") return "70%";
@@ -207,10 +218,8 @@ export default function PropertyDetails() {
         return "20%";
     };
 
-    // --- Share listing ---
     const handleShare = (platform) => {
         const url = window.location.href;
-        // 🚨 Null check added here for property.title
         const text = `Check out this property on Aspect Real Estate: ${property?.title || 'Unknown Property'} at ${property?.location || 'Unknown Location'}`;
         let shareUrl = "";
 
@@ -256,7 +265,6 @@ export default function PropertyDetails() {
         window.open(shareUrl, "_blank");
     };
 
-    // === 🚀 HELPER for proximity items ===
     const ProximityItem = ({ icon, label, name, distance }) => {
         if (!distance) return null;
         const Icon = icon;
@@ -271,11 +279,57 @@ export default function PropertyDetails() {
         );
     };
 
+    // --- 🚀 NEW: Re-create insight logic for display (with User/Agent check) ---
+    let insightText = "⚠️ AI analysis pending.";
+    let insightColorClass = "text-gray-500";
+
+    // First, check if the AI insight exists and is valid
+    if (aiCurrentInsight && !aiCurrentInsight.error && property) {
+        const actual = parseFloat(property.price || 0);
+        const aiPrice = parseFloat(aiCurrentInsight.predicted_current || 0);
+
+        if (aiPrice > 0 && actual > 0) {
+            const diff = ((actual - aiPrice) / aiPrice) * 100;
+
+            // --- ✅ NEW LOGIC HERE ---
+            // Check the user's role and set the phrasing
+            if (userRole === "agent") {
+                // --- AGENT PHRASING ---
+                if (Math.abs(diff) <= 5) {
+                    insightText = "✅ Market Aligned — Your listing price is in line with the AI's current market prediction. This is a solid, well-justified pricing strategy.";
+                    insightColorClass = "text-green-700 font-semibold";
+                } else if (diff > 5) {
+                    insightText = "🔴 Above Market — Your listing is priced significantly above the AI's prediction. This may result in fewer viewings. Consider reviewing your comparable properties.";
+                    insightColorClass = "text-red-700 font-semibold";
+                } else {
+                    insightText = "🟢 Competitive Price — Your listing is priced below the AI's predicted value. This strategy may attract more buyers and lead to a faster sale.";
+                    insightColorClass = "text-emerald-700 font-semibold";
+                }
+            } else {
+                // --- USER (HOMEBUYER) PHRASING ---
+                if (Math.abs(diff) <= 5) {
+                    insightText = "✅ Fair Price — This property is aligned with its estimated market value.";
+                    insightColorClass = "text-green-700 font-semibold";
+                } else if (diff > 5) {
+                    insightText = "🔴 Above Market — This property is listed higher than its estimated market value. There may be room for negotiation.";
+                    insightColorClass = "text-red-700 font-semibold";
+                } else {
+                    insightText = "🟢 Good Price — This property is listed below its estimated market value.";
+                    insightColorClass = "text-emerald-700 font-semibold";
+                }
+            }
+            // --- ✅ END NEW LOGIC ---
+
+        } else if (actual === 0) {
+            insightText = "⚠️ No listed price entered for comparison.";
+        }
+    }
+    // ----------------------------------------------------
+
     return (
         <div className="property-details-page fade-in">
             {/* Breadcrumb */}
             <div className="breadcrumb">
-                {/* 🚨 Optional chaining added here */}
                 <span>Properties</span> &gt; <strong>{property?.title || 'Loading...'}</strong>
             </div>
 
@@ -286,9 +340,7 @@ export default function PropertyDetails() {
                 </div>
             )}
 
-            {/* ============================================================
-               🚀 NEW LAYOUT: Full-Width Gallery
-            ============================================================ */}
+            {/* --- Gallery (Unchanged) --- */}
             <div className="photo-gallery-wrapper">
                 <div className="photo-gallery" ref={galleryRef}>
                     {displayPhotos && displayPhotos.length > 0 ? (
@@ -338,15 +390,13 @@ export default function PropertyDetails() {
                 )}
             </div>
 
-            {/* ============================================================
-               🚀 NEW LAYOUT: Content Grid (Main Details + Sticky Sidebar)
-            ============================================================ */}
+            {/* --- Content Grid (Unchanged Layout) --- */}
             <div className="property-content-grid">
 
                 {/* --- Main Details Column (Left) --- */}
                 <div className="property-main-details">
 
-                    {/* --- Price & Info Header Card --- */}
+                    {/* --- Price & Info Header Card (Unchanged) --- */}
                     <div className="card">
                         <div className="card-body">
                             <h2 className="price">
@@ -372,7 +422,7 @@ export default function PropertyDetails() {
                         </div>
                     </div>
 
-                    {/* --- Location & Proximity Card --- */}
+                    {/* --- Location & Proximity Card (Unchanged) --- */}
                     <div className="card">
                         <div className="card-body">
                             <h3 className="text-emerald-700 font-semibold mb-6 flex items-center gap-2">
@@ -419,12 +469,59 @@ export default function PropertyDetails() {
                         </div>
                     </div>
 
-                    {/* --- AI Insights Card --- */}
-                    {aiInsights && !aiInsights.error ? (
+
+                    {/* --- 🚀 NEW: AI Current Price Evaluation Card --- */}
+                    <div className="card">
+                        <div className="card-body">
+                            <h3 className="text-emerald-700 font-semibold mb-6 flex items-center gap-2">
+                                <ShieldCheck className="w-5 h-5" /> AI Current Price Evaluation
+                            </h3>
+                            {aiCurrentInsight && !aiCurrentInsight.error ? (
+                                <>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+                                        {/* Your Listed Price */}
+                                        <div>
+                                            <span className="text-sm text-gray-600">Your Listed Price</span>
+                                            <p className="text-2xl font-bold text-gray-900">
+                                                ${Number(property.price).toLocaleString()}
+                                            </p>
+                                        </div>
+                                        {/* Predicted Market Price */}
+                                        <div>
+                                            <span className="text-sm text-gray-600">Predicted Market Price</span>
+                                            <p className="text-2xl font-bold text-emerald-700">
+                                                ${aiCurrentInsight.predicted_current
+                                                    ? Number(aiCurrentInsight.predicted_current).toLocaleString(undefined, { maximumFractionDigits: 0 })
+                                                    : "N/A"
+                                                }
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {/* Insight Text */}
+                                    <div className="mt-4 pt-4 border-t border-gray-200">
+                                        <p className={`text-sm ${insightColorClass}`}>
+                                            {insightText}
+                                        </p>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-gray-500 italic">
+                                    {aiCurrentInsight?.error
+                                        ? "Current price analysis unavailable for this property."
+                                        : "Fetching current price analysis..."}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    {/* ------------------------------------------------ */}
+
+
+                    {/* --- 🚀 MODIFIED: AI Future Forecast Card --- */}
+                    {aiFutureInsight && !aiFutureInsight.error ? (
                         <div className="card bg-green-50 border border-green-200">
                             <div className="card-body">
                                 <h4 className="text-green-700 font-semibold mb-6 flex items-center gap-2">
-                                    <ShieldCheck className="w-4 h-4" /> AI Market Analysis
+                                    <LineChartIcon className="w-4 h-4" /> 📈 AI Future Forecast
                                 </h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
                                     {/* Predicted Future Price */}
@@ -432,21 +529,21 @@ export default function PropertyDetails() {
                                         <span className="text-sm text-gray-600">Predicted Future Price</span>
                                         <p className="text-2xl font-bold text-gray-900">
                                             $
-                                            {aiInsights.predicted_total_price
-                                                ? aiInsights.predicted_total_price.toLocaleString()
-                                                : aiInsights.predicted_price
-                                                    ? aiInsights.predicted_price.toLocaleString()
+                                            {aiFutureInsight.predicted_total_price
+                                                ? aiFutureInsight.predicted_total_price.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                                                : aiFutureInsight.predicted_price
+                                                    ? aiFutureInsight.predicted_price.toLocaleString(undefined, { maximumFractionDigits: 0 })
                                                     : "N/A"}
                                         </p>
                                     </div>
 
                                     {/* 95% Confidence Range */}
-                                    {aiInsights.confidence_low && aiInsights.confidence_high && (
+                                    {aiFutureInsight.confidence_low && aiFutureInsight.confidence_high && (
                                         <div>
                                             <span className="text-sm text-gray-600">95% Confidence Range</span>
                                             <p className="text-lg font-semibold text-gray-800">
-                                                ${aiInsights.confidence_low.toLocaleString()} – $
-                                                {aiInsights.confidence_high.toLocaleString()}
+                                                ${aiFutureInsight.confidence_low.toLocaleString(undefined, { maximumFractionDigits: 0 })} – $
+                                                {aiFutureInsight.confidence_high.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                             </p>
                                         </div>
                                     )}
@@ -457,10 +554,12 @@ export default function PropertyDetails() {
                                         <p className="text-lg font-semibold text-gray-800">
                                             $
                                             {(() => {
-                                                if (aiInsights.predicted_price_per_sqm)
-                                                    return aiInsights.predicted_price_per_sqm.toLocaleString();
-                                                const price = aiInsights.predicted_total_price || aiInsights.predicted_price;
+                                                if (aiFutureInsight.predicted_price_per_sqm)
+                                                    return aiFutureInsight.predicted_price_per_sqm.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+                                                const price = aiFutureInsight.predicted_total_price || aiFutureInsight.predicted_price;
                                                 const area = property?.floor_area_sqm || (property?.size ? property.size * 0.092903 : 0);
+
                                                 if (price && area > 0) {
                                                     const perSqm = price / area;
                                                     return perSqm.toLocaleString(undefined, {
@@ -474,14 +573,14 @@ export default function PropertyDetails() {
                                     </div>
 
                                     {/* AI Confidence Level */}
-                                    {aiInsights.confidence_score && (
+                                    {aiFutureInsight.confidence_score && (
                                         <div>
                                             <span className="text-sm text-gray-600">AI Confidence Level</span>
                                             <p className="text-lg font-semibold text-gray-800">
                                                 {(
-                                                    aiInsights.confidence_score > 1
-                                                        ? aiInsights.confidence_score
-                                                        : aiInsights.confidence_score * 100
+                                                    aiFutureInsight.confidence_score > 1
+                                                        ? aiFutureInsight.confidence_score
+                                                        : aiFutureInsight.confidence_score * 100
                                                 ).toFixed(1)}
                                                 %
                                             </p>
@@ -492,19 +591,21 @@ export default function PropertyDetails() {
                         </div>
                     ) : (
                         <div className="text-gray-500 italic mt-4">
-                            {aiInsights?.error
-                                ? "AI Insights unavailable for this property."
-                                : "Fetching AI Insights..."}
+                            {aiFutureInsight?.error
+                                ? "AI Future Forecast unavailable for this property."
+                                : "Fetching AI Future Forecast..."}
                         </div>
                     )}
+                    {/* ------------------------------------------------ */}
 
-                    {/* --- Prediction History Card --- */}
+
+                    {/* --- ✅ MODIFIED: Prediction History Card --- */}
                     <div className="card">
                         <div className="card-body">
-                            <details className="group">
+                            <details className="group" open> {/* Default to open */}
                                 <summary className="flex items-center gap-2 text-emerald-700 font-semibold cursor-pointer">
                                     <History className="w-4 h-4" />
-                                    Prediction History
+                                    Nearby Prediction History (1km)
                                     <span className="ml-auto text-gray-500 text-sm group-open:hidden">▼</span>
                                     <span className="ml-auto text-gray-500 text-sm hidden group-open:inline">▲</span>
                                 </summary>
@@ -514,20 +615,22 @@ export default function PropertyDetails() {
                                         <table className="min-w-full border border-gray-200 rounded-md text-sm">
                                             <thead className="bg-emerald-50">
                                                 <tr>
+                                                    {/* --- ✅ MODIFIED HEADERS --- */}
                                                     <th className="py-2 px-4 text-left">Date</th>
-                                                    <th className="py-2 px-4 text-left">Model</th>
-                                                    <th className="py-2 px-4 text-left">Predicted Price</th>
-                                                    <th className="py-2 px-4 text-left">95% Confidence Range</th>
+                                                    <th className="py-2 px-4 text-left">Listed Price</th>
+                                                    <th className="py-2 px-4 text-left">AI Predicted Price</th>
+                                                    <th className="py-2 px-4 text-left">Dist (km)</th>
                                                     <th className="py-2 px-4 text-left">AI Confidence</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {history.map((h) => (
-                                                    <tr key={h.id} className="hover:bg-emerald-50">
+                                                    // --- ✅ MODIFIED KEY AND COLUMNS ---
+                                                    <tr key={h.property_id + h.created_at} className="hover:bg-emerald-50">
                                                         <td className="py-2 px-4 border-t">{h.created_at}</td>
-                                                        <td className="py-2 px-4 border-t">{h.model_type}</td>
-                                                        <td className="py-2 px-4 border-t">{h.predicted_price}</td>
-                                                        <td className="py-2 px-4 border-t">{h.confidence_range}</td>
+                                                        <td className="py-2 px-4 border-t font-semibold">{h.listed_price}</td>
+                                                        <td className="py-2 px-4 border-t font-semibold text-emerald-700">{h.predicted_price}</td>
+                                                        <td className="py-2 px-4 border-t">{h.distance_km}</td>
                                                         <td className="py-2 px-4 border-t">{h.ai_confidence}</td>
                                                     </tr>
                                                 ))}
@@ -536,7 +639,8 @@ export default function PropertyDetails() {
                                     </div>
                                 ) : (
                                     <p className="text-gray-500 italic mt-4">
-                                        No prediction history yet. Try generating a forecast first.
+                                        {/* ✅ MODIFIED Message */}
+                                        No other predictions found within 1km of this property.
                                     </p>
                                 )}
                             </details>
@@ -544,7 +648,7 @@ export default function PropertyDetails() {
                     </div>
                 </div>
 
-                {/* --- Sticky Sidebar Column (Right) --- */}
+                {/* --- Sticky Sidebar Column (Right) (Unchanged) --- */}
                 <div className="property-sidebar">
                     <div className="property-info card sticky top-5 self-start">
                         <div className="card-body">
@@ -628,7 +732,7 @@ export default function PropertyDetails() {
             </div> {/* <-- END OF property-content-grid --> */}
 
 
-            {/* --- Contact Modal (Homeowner only) --- */}
+            {/* --- Contact Modal (Homeowner only) (Unchanged) --- */}
             {userRole === "homeowner" && showModal && (
                 <div className="modal-backdrop">
                     <div className="modal-box">
@@ -636,7 +740,6 @@ export default function PropertyDetails() {
                             <Mail className="w-5 h-5 text-emerald-700" /> Contact Agent
                         </h3>
 
-                        {/* 🚨 Optional chaining added here */}
                         {property.agent && (
                             <div className="agent-modal-info mb-4">
                                 <h4 className="font-semibold text-emerald-700 flex items-center gap-2">

@@ -164,7 +164,6 @@ export default function AddProperties() {
         };
     }, [currentStep, form.latitude, form.longitude]);
 
-
     // === Photo Upload ===
     // Convert each uploaded photo into base64 before saving
     const handlePhotoUpload = async (e) => {
@@ -202,18 +201,15 @@ export default function AddProperties() {
     // === Handle Submit ===
     async function handleSubmit(e, saveAsDraft = false) {
         e.preventDefault();
-        // Assuming 'form', 'agentId', 'api', 'Swal', 'navigate', and 'fmt' are available in scope.
         try {
-            // Step 1️⃣: Prepare payload for saving the property to the database
+            // Step 1️⃣: Save property
             const payload = {
                 ...form,
                 agent_id: agentId,
-                // Note: Photos is JSON.stringified for the database save, as per original logic.
                 photos: JSON.stringify(form.photos),
                 status: saveAsDraft ? "Draft" : "Pending",
             };
 
-            // 1A: Save property to the backend/database
             const res = await api.post("/properties", payload);
             const { property_id } = res.data;
 
@@ -227,40 +223,77 @@ export default function AddProperties() {
                 return;
             }
 
-            // Step 2️⃣: Trigger AI prediction (Only if not saving as draft)
-            if (property_id) {
-                // ✅ FIX APPLIED: Spread the original property data ({...form}) into the prediction payload.
-                // This ensures 'price', 'size', 'tenure', etc. are sent to the Flask API.
+            // Step 2️⃣: Predict current market price
+            let aiCurrent = null;
+            let insightText = "";
+            try {
+                const currentRes = await api.post("/predict/current", {
+                    ...form,
+                    property_id,
+                    user_id: agentId,
+                });
+                aiCurrent = currentRes.data.predicted_total_price;
+
+                const actual = parseFloat(form.price || 0);
+                const diff = ((actual - aiCurrent) / aiCurrent) * 100;
+
+                if (isNaN(actual)) {
+                    insightText = "⚠️ No listed price entered.";
+                } else if (Math.abs(diff) <= 5) {
+                    insightText = "✅ Fairly Priced — aligned with market average.";
+                } else if (diff > 5) {
+                    insightText = "🔴 Above Market — consider adjusting your price downward.";
+                } else {
+                    insightText = "🟢 Below Market — your listing may attract more buyers.";
+                }
+            } catch (err) {
+                console.warn("Current price prediction failed:", err);
+                insightText = "⚠️ Unable to fetch current market prediction.";
+            }
+
+            // Step 3️⃣: Predict future resale forecast
+            let futureForecast = null;
+            try {
                 const predictRes = await api.post("/predict/future", {
                     ...form,
                     property_id,
                     user_id: agentId,
                 });
-
-                const data = predictRes.data;
-                setAiResult(data);
-
-                Swal.fire({
-                    title: "🏡 Future Resale Price Forecast",
-                    html: `
-                <div style="text-align:left; font-size:14px; line-height:1.6;">
-                    <p><strong>Predicted Future Resale Price:</strong> $${fmt(data.predicted_total_price)}</p>
-                    <p><strong>Price per sqm:</strong> $${fmt(data.predicted_price_per_sqm)}</p>
-                    <p><strong>Confidence Range:</strong> $${fmt(data.confidence_low)} – $${fmt(data.confidence_high)}</p>
-                    <p><strong>AI Confidence Level:</strong> ${data.confidence_score?.toFixed?.(1) || data.confidence_score}%</p>
-                    <p><strong>Annual Growth Rate:</strong> ${data.annual_growth_rate || "—"}</p>
-                    ${data.years_forward
-                            ? `<p><strong>Projection Horizon:</strong> ${data.years_forward} years ahead</p>`
-                            : ""
-                        }
-                    <p><strong>Market Trend:</strong> ${data.market_trend || "Resale market projection based on current conditions."}</p>
-                </div>`,
-                    confirmButtonText: "Close",
-                    confirmButtonColor: "#16a34a", // emerald tone
-                }).then(() => navigate("/properties"));
-            } else {
-                navigate("/properties");
+                futureForecast = predictRes.data;
+                setAiResult(futureForecast);
+            } catch (err) {
+                console.warn("Future forecast failed:", err);
             }
+
+            // Step 4️⃣: Display combined result
+            const listedPrice = parseFloat(form.price || 0);
+            let htmlContent = `
+            <div style="text-align:left; font-size:14px; line-height:1.6;">
+                <h4 style="color:#047857;">🏠 AI Current Price Evaluation</h4>
+                <p><strong>Your Listed Price:</strong> $${fmt(listedPrice)}</p>
+                <p><strong>Predicted Market Price:</strong> $${fmt(aiCurrent)}</p>
+                <p style="margin-top:6px;">${insightText}</p>
+        `;
+
+            if (futureForecast) {
+                htmlContent += `
+                <hr style="margin:10px 0;"/>
+                <h4 style="color:#0f766e;">📈 Future Resale Forecast (${futureForecast.years_forward || 3} yrs)</h4>
+                <p><strong>Predicted Future Price:</strong> $${fmt(futureForecast.predicted_total_price)}</p>
+                <p><strong>Confidence Range:</strong> $${fmt(futureForecast.confidence_low)} – $${fmt(futureForecast.confidence_high)}</p>
+                <p><strong>Annual Growth Rate:</strong> ${futureForecast.annual_growth_rate}</p>
+                <p><strong>Market Trend:</strong> ${futureForecast.market_trend}</p>
+            `;
+            }
+
+            htmlContent += "</div>";
+
+            Swal.fire({
+                title: "🏡 AI Market Insights",
+                html: htmlContent,
+                confirmButtonText: "Close",
+                confirmButtonColor: "#16a34a",
+            }).then(() => navigate("/properties"));
         } catch (err) {
             console.error(err.response?.data || err.message);
             Swal.fire({
@@ -490,10 +523,7 @@ export default function AddProperties() {
                                 </select>
                             </div>
 
-                            {/* ============================================================
-                            ENHANCEMENT IMPLEMENTED: Conditionally render Amenities
-                            ============================================================
-                            */}
+                            {/* Conditionally render Amenities for Condominium */}
                             {form.property_type === "Condominium" && (
                                 <div className="full">
                                     <label className="label">Amenities</label>
@@ -518,10 +548,9 @@ export default function AddProperties() {
                                     </div>
                                 </div>
                             )}
-                            {/* ============================================================ */}
-
                         </div>
                     )}
+
                     {/* STEP 3: LOCATION & SCORES */}
                     {currentStep === 2 && (
                         <div className="form-grid">
@@ -680,8 +709,6 @@ export default function AddProperties() {
                             </div>
                         </div>
                     )}
-
-
 
                     {/* STEP 4: MEDIA */}
                     {currentStep === 3 && (

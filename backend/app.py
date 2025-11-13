@@ -26,6 +26,8 @@ import requests
 from psycopg2 import OperationalError
 import stripe
 from decimal import Decimal
+import requests, time
+
 
 load_dotenv()
 app = Flask(__name__)
@@ -148,35 +150,42 @@ def normalize_homeowner_preferences(payload):
 # ----------------------------------------------------
 # 1. CONFIGURATION & GLOBAL MODEL LOADING (Runs once)
 # ----------------------------------------------------
+import os
+import joblib
+import json
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import traceback # Ensure this is imported for error handling
 
-MODEL_DIR = "joblib"
-# future prediction model path
-MODEL_PATH = os.path.join(MODEL_DIR, "lgbm_property_forecast_model_v3.joblib")
-ENCODER_PATHS = {
-    "region": os.path.join(MODEL_DIR, "region_encoder.joblib"),
-    "property_type_final": os.path.join(MODEL_DIR, "property_type_final_encoder.joblib"),
-    "tenure": os.path.join(MODEL_DIR, "tenure_encoder.joblib"),
-    "geo_cluster": os.path.join(MODEL_DIR, "geo_cluster_encoder.joblib"),
-}
+# --- ✅ v12: Point to your folder and the ONE pipeline file ---
+MODEL_DIR = "joblib" 
+PIPELINE_PATH = os.path.join(MODEL_DIR, "lgbm_property_pipeline_v12.joblib")
 
+# --- Data Paths (Update as needed) ---
 DATA_PATH = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\excel\Cleaned_Merged_Property_Transactions_v2.xlsx"
 CACHE_FILE = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\cache\growth_rates.json"
-LAGS_PATH = "cache/regional_lags.json"
 
+# --- ✅ v12: Prime HDB Locations used in v12 training script ---
+PRIME_HDB_LOCATIONS = ['CENTRAL', 'QUEENSTOWN', 'BUKIT MERAH', 'TOA PAYOH', 'BISHAN', 'KALLANG/WHAMPOA']
+
+
+# === Growth Rate Loading Logic (Unchanged) ===
 def load_growth_rates(file_path: str):
     """
-    Loads or caches region-level annualized growth rates (CAGR) per region.
-    Uses cached JSON if available for near-instant startup (<0.1s).
-    If not cached, computes from Excel once and saves result.
+    Loads or caches region-level annualized growth rates (CAGR) per region-property_type combination.
     """
     # 1. Use cache if available
+    # NOTE: CACHE_FILE must be defined globally for this function to work.
+    
+    # --- 1. Use cache if available ---
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, "r") as f:
                 growth_dict = json.load(f)
             print("Loaded growth rates from cache.")
             for k, v in growth_dict.items():
-                print(f"   {k}: {v:.4f}")
+                 print(f"   {k}: {v:.4f}")
             return growth_dict
         except Exception as e:
             print(f"Failed to read cache ({e}), recomputing...")
@@ -186,18 +195,109 @@ def load_growth_rates(file_path: str):
     use_cols = ["region", "transaction_date", "price", "floor_area_sqm"]
     df = pd.read_excel(file_path, usecols=use_cols)
 
-    # Sample 20% to improve performance (optional)
-    if len(df) > 3000:
-        df = df.sample(frac=0.2, random_state=42)
+    # --- 2. Compute fresh if cache not found ---
+    print("📊 Computing growth rates from dataset...")
+    try:
+        df = pd.read_excel(file_path)
+    except Exception as e:
+        print(f"Fatal error loading data: {e}")
+        # Return a robust default dictionary on failure
+        return {"HDB_Central": 0.045, "Condominium_Central": 0.045, 
+                "HDB_East": 0.045, "Condominium_East": 0.045} 
 
-    # --- Derived columns ---
+    df.columns = df.columns.str.strip()
+    
+    # Helper for normalizing property type (must match training script's growth logic)
+    def normalize_prop_type_growth(row_value):
+        row_value = str(row_value).upper()
+        if "CONDO" in row_value or "APARTMENT" in row_value:
+            return "Condominium"
+        if "ROOM" in row_value or "HDB" in row_value or "FLAT" in row_value or "EXECUTIVE" in row_value:
+            return "HDB"
+        return "Other" # Group Landed/Other
+
+    df['property_category'] = df['property_type_final'].apply(normalize_prop_type_growth)
+    # Exclude property types that skew residential growth (e.g., commercial/industrial)
+    df = df[df['property_category'].isin(['HDB', 'Condominium'])] 
+
+    # Prepare data for calculation
     df["price_per_sqm"] = df["price"] / df["floor_area_sqm"]
     df["transaction_year"] = pd.to_datetime(df["transaction_date"], errors="coerce").dt.year
     df = df.dropna(subset=["region", "transaction_year", "price_per_sqm"])
-
+    
     growth_dict = {}
+    
+    # --- Compute CAGR per region-property_type combo ---
+    for (region, prop_type), group in df.groupby(["region", "property_category"]):
+        group = group.groupby("transaction_year")["price_per_sqm"].median().sort_index()
+        if len(group) >= 2:
+            first, last = group.iloc[0], group.iloc[-1]
+            years = group.index[-1] - group.index[0]
+            if first > 0 and years > 0:
+                cagr = (last / first) ** (1 / years) - 1
+                # Smooth to realistic range (2% to 6%)
+                cagr_smoothed = min(max(cagr, 0.02), 0.06) 
+                growth_dict[f"{prop_type}_{region.title()}"] = round(cagr_smoothed, 4)
+
+    # Fill in any missing region-prop_type combinations with the default
+    all_regions = df['region'].unique()
+    all_props = ["HDB", "Condominium"]
+    for r in all_regions:
+        for p in all_props:
+            key = f"{p}_{r.title()}"
+            if key not in growth_dict:
+                growth_dict[key] = 0.045 # Default 4.5%
+
+    # --- 3. Save to cache for next startup ---
+    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+    with open(CACHE_FILE, "w") as f:
+        json.dump(growth_dict, f, indent=4)
+    
+    print("✅ Cached region-level growth rates:")
+    for k, v in growth_dict.items():
+        print(f"   {k}: {v:.4f}")
+
+    return growth_dict
 
 
+# === Global Load Once ===
+GROWTH_RATES = load_growth_rates(DATA_PATH)
+print(f"✅ Loaded growth rates: {GROWTH_RATES}")
+
+# --- ✅ v12: Load the single pipeline ---
+pipeline = None
+try:
+    print(f"Loading v12 pipeline from {PIPELINE_PATH}...")
+    pipeline = joblib.load(PIPELINE_PATH)
+    print("✅ v12 Pipeline (Model+Scaler+OHE) loaded successfully.")
+
+except Exception as e:
+    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    print(f"ERROR: Could not load v12 pipeline. Check path: {PIPELINE_PATH}")
+    print(f"Loading Error: {e}")
+    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    pipeline = None
+
+
+# --- ✅ v12: Feature lists MUST match your training script (train_lgbm_price_forecaster_v12.py) ---
+NUMERIC_FEATURES = [
+    "floor_area_sqm", "remaining_lease_adj", "property_age",
+    "nearest_mrt_km", "nearest_mall_km", "nearest_school_km",
+    "nearest_hospital_km", "nearest_park_km", "amenity_score",
+    "transaction_year", "transaction_month", "year_sin", "year_cos",
+    "amenity_density", "mrt_x_area", "mall_x_school"
+]
+CATEGORICAL_FEATURES = [
+    "region", 
+    "property_category", 
+    "tenure_clean",      
+    "geo_cluster", 
+    "prop_region_combo",
+    "prime_town_flag" 
+]
+
+MODEL_FEATURES = NUMERIC_FEATURES + CATEGORICAL_FEATURES
+print(f"✅ v12 Model features loaded. Count: {len(MODEL_FEATURES)}")
 
 # Allow frontend (Vite dev server) to call this API in dev
 CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
@@ -685,16 +785,154 @@ def approve_property(prop_id):
 
 
 # List all active properties (public marketplace view)
+# Called by: AllPropertiesPage.js
 @app.get("/api/properties/all")
-def list_all_properties():
-    rows = query_all("""
+def list_all_public_properties():
+    """
+    Gets all properties that are marked as 'Active' for the public marketplace.
+    """
+    
+    # --- Following the style of your /api/properties endpoint ---
+    query = """
         SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
                size, location, photos, status, created_at, updated_at
         FROM properties
-        WHERE status = 'Active'
-        ORDER BY created_at DESC
-    """)
-    return jsonify(rows)
+        WHERE 1=1
+    """
+    params = []
+
+    # Hard-code the 'Active' status for this public endpoint
+    query += " AND status = %s"
+    params.append('Active')
+
+    query += " ORDER BY created_at DESC"
+    
+    # Call query_all with *both* arguments, just like your working function
+    rows = query_all(query, params)
+    
+    # --- Add back your JSON processing for photos ---
+    processed_rows = []
+    for row in rows:
+        if 'photos' in row and isinstance(row['photos'], str):
+            try:
+                row['photos'] = json.loads(row['photos'])
+            except json.JSONDecodeError:
+                row['photos'] = [] # Default to empty list if parsing fails
+        processed_rows.append(row)
+
+    return jsonify(processed_rows)
+
+
+# === 2. PUBLIC: Get ONE Active Property by ID ===
+# (For your 'PublicPropertyPage.js' detail page)
+
+@app.get("/api/explore/properties/<int:prop_id>")
+def get_public_property(prop_id):
+    """
+    Gets a single, detailed property view by its ID, but *only* if it is 'Active'.
+    """
+    
+    # --- Fetch property + agent info in one query ---
+    row = query_all(
+        """
+        SELECT 
+            p.id, p.agent_id, p.title, p.property_type, p.description, p.price,
+            p.bedrooms, p.bathrooms, p.size, p.location, p.latitude, p.longitude,
+            p.photos, p.status, p.furnishing, p.floor_level, p.tenure, p.amenities,
+            p.floor_plan, p.video_url, p.created_at, p.updated_at,
+            p.region, p.property_type_final, p.floor_area_sqm, p.remaining_lease,
+            p.nearest_mrt_km, p.nearest_school_km, p.nearest_mall_km, p.nearest_hospital_km,
+            p.nearest_park_km, p.nearest_business_km, p.amenity_score, p.health_score,
+            p.green_score, p.business_access_score, p.floor_level_num, p.year_completed,
+            p.transaction_year, p.transaction_month, p.geo_cluster,
+            u.name AS agent_name, u.status AS agent_status, u.last_active,
+            p.nearest_mrt_name,
+            p.nearest_mall_name,
+            p.nearest_school_name,
+            p.nearest_hospital_name,
+            p.nearest_park_name,
+            p.nearest_business_name
+        FROM properties p
+        LEFT JOIN users u ON p.agent_id = u.id
+        WHERE p.id = %s
+          AND p.status = 'Active'  -- ✅ This is the critical public filter
+        """,
+        [prop_id],
+    )
+
+    if not row:
+        return jsonify({"error": "Property not found or is not active"}), 404
+
+    # Get the single item from the list
+    data = row[0]
+
+    # ✅ Convert Decimal and JSON fields for React compatibility
+    for key, value in data.items():
+        if isinstance(value, Decimal):
+            data[key] = float(value)
+        
+        elif key in ("photos", "amenities") and isinstance(value, str):
+            value_str = value.strip()
+            
+            if value_str.startswith("[") or value_str.startswith("{"):
+                # stored as JSON text, decode
+                try:
+                    data[key] = json.loads(value_str)
+                except json.JSONDecodeError:
+                    data[key] = []
+            else:
+                # stored as base64, plain string, or comma-separated
+                if value_str.startswith("data:image"):
+                    data[key] = [value_str]
+                elif "," in value_str:
+                    data[key] = [v.strip() for v in value_str.split(",") if v.strip()]
+                else:
+                    data[key] = [value_str] if value_str else []
+
+    # --- Compute agent responsiveness ---
+    activity = "Inactive"
+    last_active_iso = None
+
+    if data.get("last_active"):
+        last_active = data["last_active"]
+
+        if isinstance(last_active, str):
+            try:
+                last_active = datetime.fromisoformat(last_active)
+            except Exception:
+                pass  # silently skip if format unexpected
+
+        if isinstance(last_active, datetime):
+            if last_active.tzinfo is None:
+                last_active = last_active.replace(tzinfo=timezone.utc)
+            
+            diff_days = (datetime.now(timezone.utc) - last_active).days
+            last_active_iso = last_active.isoformat()
+
+            if diff_days <= 1:
+                activity = "Highly responsive"
+            elif diff_days <= 7:
+                activity = "Active this week"
+            else:
+                activity = "Occasionally active"
+
+    # --- Build agent subobject ---
+    agent_info = {
+        "id": data.get("agent_id"),
+        "name": data.get("agent_name"),
+        "status": data.get("agent_status"),
+        "verified": str(data.get("agent_status")).lower() == "approved",
+        "activity": activity,
+        "last_active": last_active_iso,
+    }
+
+    # --- Merge back into response ---
+    data["agent"] = agent_info
+    data.pop("agent_name", None)
+    data.pop("agent_status", None)
+    data.pop("last_active", None)
+
+    return jsonify(data)
 
 # --- PROPERTIES (CRUD for agent properties) ---
 #list properties by agent
@@ -1923,192 +2161,150 @@ def send_chat_email_to_buyer(buyer_name, buyer_email, agent_name, property_title
     except Exception as e:
         print(f"Failed to send chat email: {e}")
 
-# ============================================================
-#  Predict Current Property Price
-# ============================================================
-# @app.post("/api/predict/current")
-# def predict_current():
-#     body = request.get_json(force=True) or {}
-#     user_id = body.get("user_id")  # optional if logged in user
-#     input_data = body.copy()
+# --- ✅ START: COMPREHENSIVE LOCATION HOTFIX (V6 - Final) ---
+# This function fixes all contradictory location features at once.
 
-#     try:
-#         if not body:
-#             return jsonify({"error": "Missing JSON body"}), 400
-
-#         df = pd.DataFrame([body])
-#         y_pred = round(float(current_model.predict(df)[0]), 2)
-
-#         # === Log prediction into database ===
-#         with get_cursor() as cur:
-#             cur.execute("""
-#                 INSERT INTO predictions (user_id, model_type, input_data, predicted_price, created_at)
-#                 VALUES (%s, %s, %s, %s, %s)
-#             """, [
-#                 user_id,
-#                 "current",
-#                 str(input_data),
-#                 y_pred,
-#                 datetime.now()
-#             ])
-
-#         return jsonify({
-#             "model": "current_price",
-#             "predicted_price": y_pred,
-#             "input": input_data
-#         })
-
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 400
-
-
-# ============================================================
-#  Predict Future Property Price 
-# ============================================================
-@app.post("/api/predict/future")
-def predict_future_resale():
+def get_hotfixed_location(lat, lon, prop_type, original_region):
     """
-    Predicts *future resale price* using the trained LightGBM model (v3),
-    applying dynamic annual growth rates per region based on actual dataset trends.
+    Checks if a property is in a mis-trained prime zone.
+    If yes, returns a dictionary with ALL fixed location features
+    (region, geo_cluster) to prevent contradictions.
     """
     
-    if future_model is None or not encoders or not regional_lags:
-        return jsonify({"error": "Model, encoders, or lag data not loaded. Check server logs."}), 503
+    # 1. Create the default (original) feature set
+    original_lat_cluster = round(lat, 2)
+    original_lon_cluster = round(lon, 2)
+    
+    # This is the baseline
+    hotfixed_features = {
+        "region": original_region.title(),
+        "geo_cluster": f"{original_lat_cluster}_{original_lon_cluster}"
+    }
+
+    # Only apply this logic to HDBs
+    if prop_type != "HDB":
+        return hotfixed_features # Return original values
+
+    print(f"\n--- [HOTFIX_DEBUG] ---")
+    print(f"[HOTFIX_DEBUG] Checking HDB at lat: {lat}, lon: {lon}")
+
+    # --- Bounding Box Definitions ---
+    TIONG_BAHRU_BOUNDS = {"min_lat": 1.280, "max_lat": 1.290, "min_lon": 103.825, "max_lon": 103.835}
+    CLEMENTI_BOUNDS = {"min_lat": 1.310, "max_lat": 1.318, "min_lon": 103.760, "max_lon": 103.768}
+    ANG_MO_KIO_BOUNDS = {"min_lat": 1.368, "max_lat": 1.375, "min_lon": 103.844, "max_lon": 103.852}
+    # ... (add your other boxes here) ...
+
+    # --- Logic ---
+
+    # Check Tiong Bahru
+    if (TIONG_BAHRU_BOUNDS["min_lat"] <= lat <= TIONG_BAHRU_BOUNDS["max_lat"] and
+        TIONG_BAHRU_BOUNDS["min_lon"] <= lon <= TIONG_BAHRU_BOUNDS["max_lon"]):
+        
+        print(f"[HOTFIX_DEBUG] MATCHED: Tiong Bahru Box.")
+        print(f"[HOTFIX_DEBUG] Overriding Region -> 'Bukit Merah'")
+        print(f"[HOTFIX_DEBUG] Overriding GeoCluster -> '1.29_103.82' (A real BM cluster)")
+        print(f"--- [END HOTFIX_DEBUG] ---\n")
+        
+        # Override ALL contradictory features
+        hotfixed_features["region"] = "Bukit Merah"
+        # We use a KNOWN "Bukit Merah" cluster (e.g., from 116 Bukit Merah View)
+        hotfixed_features["geo_cluster"] = "1.29_103.82" 
+        return hotfixed_features
+
+    # Check Clementi
+    if (CLEMENTI_BOUNDS["min_lat"] <= lat <= CLEMENTI_BOUNDS["max_lat"] and
+        CLEMENTI_BOUNDS["min_lon"] <= lon <= CLEMENTI_BOUNDS["max_lon"]):
+        
+        print(f"[HOTFIX_DEBUG] MATCHED: Clementi Box.")
+        print(f"[HOTFIX_DEBUG] Overriding Region -> 'Queenstown'")
+        print(f"[HOTFIX_DEBUG] Overriding GeoCluster -> '1.31_103.78' (A real QT cluster)")
+        print(f"--- [END HOTFIX_DEBUG] ---\n")
+        
+        hotfixed_features["region"] = "Queenstown"
+        hotfixed_features["geo_cluster"] = "1.31_103.78" # A known Queenstown cluster
+        return hotfixed_features
+        
+    # ... (add other 'if' blocks for AMK, etc.) ...
+
+    # Default: Not in a special box
+    print(f"[HOTFIX_DEBUG] NO MATCH: No bounding box hit. Using original features.")
+    print(f"--- [END HOTFIX_DEBUG] ---\n")
+    return hotfixed_features
+
+# --- ✅ END: COMPREHENSIVE LOCATION HOTFIX (V6) ---
+
+# ============================================================
+# Predict Current Resale Price (v12 pipeline – with DB insert)
+# ============================================================
+@app.post("/api/predict/current")
+def predict_current_price_v12():
+    """
+    Predicts *current market price* using the trained v12 LightGBM pipeline.
+    Includes: location hotfix (V6) + localized correction multiplier (V1).
+    """
+    if pipeline is None:
+        return jsonify({"error": "v12 pipeline not loaded."}), 503
 
     body = request.get_json(force=True) or {}
-    print(f"Incoming JSON Body: {body}")
+    print(f"Incoming JSON Body (/predict/current v12): {body}")
 
     try:
-        # === 1️⃣ Parse & Normalize Input ===
-        floor_area_sqm = 0.0
-        
-        if body.get("floor_area_sqm"):
-            floor_area_sqm = float(body["floor_area_sqm"])
-        elif any(k in body for k in ["floor_area_sqft", "sqft", "size"]):
-            for key in ["floor_area_sqft", "sqft", "size"]:
-                if body.get(key):
-                    floor_area_sqm = float(body[key]) * 0.092903
-                    break
+        # --- 1️⃣ Parse Inputs ---
+        floor_area_sqm = float(body.get("floor_area_sqm") or 75)
+        region_str = str(body.get("region") or "Central").title()
+        prop_type_raw = str(body.get("property_type_final") or body.get("property_type") or "Condominium")
+        tenure_raw = str(body.get("tenure") or "99-year Leasehold")
 
-        if floor_area_sqm <= 10:
-            floor_area_sqm = 75.0 # Default fallback
-            print(f"⚠️ Defaulted floor_area_sqm={floor_area_sqm}")
+        def normalize_prop_type(v):
+            v = v.upper()
+            if "HDB" in v or "FLAT" in v or "EXECUTIVE" in v: return "HDB"
+            if "CONDO" in v or "APARTMENT" in v: return "Condominium"
+            if "TERRACE" in v or "LANDED" in v or "SEMI" in v: return "Landed"
+            return "Other"
+        prop_type = normalize_prop_type(prop_type_raw)
 
-        price = float(body.get("price") or 0)
-        
-        # --- (A) Get RAW inputs from frontend ---
-        region_str_raw = str(body.get("region") or "Central").title()
-        prop_type_raw = str(body.get("property_type_final") or body.get("property_type") or "Condo")
-        tenure_raw = str(body.get("tenure") or "99-year")
+        def normalize_tenure(v):
+            v = v.lower()
+            if "freehold" in v: return "Freehold"
+            if "999" in v: return "999-year"
+            return "99-year Leasehold"
+        tenure_str = normalize_tenure(tenure_raw)
 
-# --- (B) ✨ NORMALIZATION FIX (Corrected) ✨ ---
-        # This block now correctly handles all inputs and standardizes
-        # them to the strings your model was trained on.
-        
-        if "hdb" in prop_type_raw.lower():
-            prop_type = "HDB"
-        elif "condo" in prop_type_raw.lower():
-            # FIX: Catches 'Condo' from frontend and converts to 'Condominium'
-            prop_type = "Condominium"
-        else:
-            # Default for any other private property
-            prop_type = "Condominium"
-            
-        if "99-year" in tenure_raw.lower() or "99 year" in tenure_raw.lower():
-            # FIX: Catches '99-year Leasehold' AND '99-year'
-            # and standardizes them to the correct '99-year Leasehold'
-            tenure_str = "99-year Leasehold"
-        elif "freehold" in tenure_raw.lower():
-            tenure_str = "Freehold"
-        elif "999" in tenure_raw:
-            # NOTE: Your model might expect '999-year Leasehold'
-            # If '999-year' fails, change this.
-            tenure_str = "999-year"
-        else:
-            # Default fallback set to match training data
-            tenure_str = "99-year Leasehold" 
+        latitude = float(body.get("latitude") or 1.35)
+        longitude = float(body.get("longitude") or 103.82)
 
-        region_str = region_str_raw
-        
-        # --- (C) Continue parsing other features ---        
-        # --- (C) Continue parsing other features ---
+        # --- ✅ HOTFIX (V6) ---
+        location_features = get_hotfixed_location(latitude, longitude, prop_type, region_str)
+        region_for_model = location_features["region"]
+        geo_cluster_for_model = location_features["geo_cluster"]
+
         nearest_mrt_km = float(body.get("nearest_mrt_km") or 0.8)
         nearest_mall_km = float(body.get("nearest_mall_km") or 1.5)
         nearest_school_km = float(body.get("nearest_school_km") or 1.0)
         nearest_hospital_km = float(body.get("nearest_hospital_km") or 2.0)
         nearest_park_km = float(body.get("nearest_park_km") or 1.2)
         amenity_score = float(body.get("amenity_score") or 5.0)
-
         remaining_lease = float(body.get("remaining_lease") or 90)
-        year_completed = int(body.get("year_completed") or datetime.now().year)
+        year_completed = int(body.get("year_completed") or 2010)
+
         transaction_year = datetime.now().year
         transaction_month = datetime.now().month
         property_age = max(0, transaction_year - year_completed)
 
-        latitude = float(body.get("latitude") or 1.35)
-        longitude = float(body.get("longitude") or 103.82)
-        
-        # === 1b. BUSINESS LOGIC GUARDRAILS ===
-        if remaining_lease < 5:
-            return jsonify({
-                "error": "Prediction Unreliable",
-                "message": f"Properties with {remaining_lease} years remaining have non-standard valuation. Model cannot provide an accurate forecast."
-            }), 400
-        
-        nearest_mrt_km = max(0.1, min(10.0, nearest_mrt_km))
-        floor_area_sqm = max(30.0, min(1000.0, floor_area_sqm))
-
-        # === 2️⃣ Derived Features (Matching training script) ===
-        if price > 0:
-            price_per_sqm = price / floor_area_sqm
-        else:
-            price_per_sqm = 0 
-            print("⚠️ Warning: Input price is 0, price_per_sqm set to 0.")
-
-        remaining_lease_adj = 999 if "freehold" in tenure_str.lower() else remaining_lease
+        remaining_lease_adj = 999 if tenure_str != "99-year Leasehold" else remaining_lease
         year_sin = np.sin(2 * np.pi * transaction_month / 12)
         year_cos = np.cos(2 * np.pi * transaction_month / 12)
-        amenity_density = 1 / (nearest_mrt_km + nearest_mall_km + nearest_school_km + nearest_hospital_km + 1)
+        amenity_density = 1 / (nearest_mrt_km + nearest_mall_km +
+                               nearest_school_km + nearest_hospital_km + 1)
         mrt_x_area = nearest_mrt_km * floor_area_sqm
         mall_x_school = nearest_mall_km * nearest_school_km
-        
-        geo_cluster_str = f"{round(latitude, 2)}_{round(longitude, 2)}"
-        
-        # --- ANCHORING FIX ---
-        default_lags = regional_lags.get("Central", {}) 
-        lags = regional_lags.get(region_str, default_lags)
-        
-        # Use a copy of `price` for the lags, but keep original `price` for the bias check
-        user_input_price = float(body.get("price") or 0)
-        if user_input_price == 0:
-            user_input_price = lags.get("price_lag_1", 1000000)
-            
-        price_lag_1 = user_input_price
-        price_lag_3 = user_input_price
-        price_lag_6 = user_input_price
-        # --- END ANCHORING FIX ---
 
-        # === 3️⃣ Encoding ===
-        def safe_encode(name, value):
-            le = encoders.get(name)
-            if not le:
-                print(f"⚠️ Warning: Encoder '{name}' not found.")
-                return 0
-            if value in le.classes_:
-                return le.transform([value])[0]
-            else:
-                print(f"⚠️ Warning: Unknown value '{value}' for feature '{name}'. Defaulting to 0.")
-                return 0
+        prop_region_combo = f"{prop_type}_{region_for_model}"
+        is_prime_hdb = (prop_type == "HDB") and (region_for_model.upper() in PRIME_HDB_LOCATIONS)
+        prime_town_flag = "Prime_HDB_Area" if is_prime_hdb else "Other_Area"
 
-        region_code = safe_encode("region", region_str)
-        prop_type_code = safe_encode("property_type_final", prop_type) 
-        tenure_code = safe_encode("tenure", tenure_str)
-        geo_cluster_code = safe_encode("geo_cluster", geo_cluster_str)
-
-        # === 4️⃣ Assemble Features for Model ===
         input_data = {
             "floor_area_sqm": floor_area_sqm,
-            "price_per_sqm": price_per_sqm,
             "remaining_lease_adj": remaining_lease_adj,
             "property_age": property_age,
             "nearest_mrt_km": nearest_mrt_km,
@@ -2121,61 +2317,248 @@ def predict_future_resale():
             "transaction_month": transaction_month,
             "year_sin": year_sin,
             "year_cos": year_cos,
-            "price_lag_1": price_lag_1,
-            "price_lag_3": price_lag_3,
-            "price_lag_6": price_lag_6,
             "amenity_density": amenity_density,
             "mrt_x_area": mrt_x_area,
             "mall_x_school": mall_x_school,
-            "region_code": region_code,
-            "property_type_final_code": prop_type_code,
-            "tenure_code": tenure_code,
-            "geo_cluster_code": geo_cluster_code
+            "region": region_for_model,
+            "property_category": prop_type,
+            "tenure_clean": tenure_str,
+            "geo_cluster": geo_cluster_for_model,
+            "prop_region_combo": prop_region_combo,
+            "prime_town_flag": prime_town_flag,
         }
-        
-        X_input = pd.DataFrame([input_data])
-        X_input = X_input.reindex(columns=MODEL_FEATURES, fill_value=0)
+        X_input = pd.DataFrame([input_data], columns=MODEL_FEATURES)
 
-        # === 5️⃣ Base Prediction ===
-        base_pred_log = future_model.predict(X_input)[0]
-        model_base_price = np.expm1(base_pred_log) # This is the model's (biased) opinion
-        
-        # === 5b. ✨ DYNAMIC BIAS CORRECTION (New Fix) ✨ ===
-        # This dynamically catches bias for new estates like Tengah
-        # without hard-coding estate names.
-        
-        final_base_price = model_base_price
-        correction_reason = "None"
-        
-        # If the model's guess is >20% different from the user's *actual* price,
-        # we trust the user's price as the "real" base.
-        if user_input_price > 0 and abs(model_base_price - user_input_price) / user_input_price > 0.20:
-            print(f"⚠️ Model bias detected! Model: {model_base_price:,.0f}, User: {user_input_price:,.0f}")
-            print("    Overriding model base price with user's input price.")
-            final_base_price = user_input_price # Use the user's price as the "real" base
-            correction_reason = f"Model bias corrected. (Base: {user_input_price:,.0f})"
-            
-        # === 6️⃣ Apply Dynamic Resale Market Growth ===
-        YEARS_FORWARD = float(body.get("years_forward") or 3)
+        # --- 2️⃣ Predict ---
+        pred_log = pipeline.predict(X_input)[0]
+        predicted_price = float(np.expm1(pred_log))
+        predicted_price_per_sqm = predicted_price / floor_area_sqm
 
-        ANNUAL_GROWTH_RATE = GROWTH_RATES.get(region_str, np.mean(list(GROWTH_RATES.values())))
-        
-        # Calculate the future price from the *corrected* base price
-        predicted_future_price = final_base_price * ((1 + ANNUAL_GROWTH_RATE) ** YEARS_FORWARD)
+        # --- ✅ LOCATION CORRECTION MULTIPLIER (inline) ---
+        ADJUSTMENTS = {
+            "Tiong Bahru": 1.60,   # +60%
+            "Bukit Merah": 1.50,   # +50%
+            "Queenstown": 1.20
+        }
+        applied_multiplier = 1.0
+        if region_for_model in ADJUSTMENTS:
+            applied_multiplier = ADJUSTMENTS[region_for_model]
+        if 1.280 <= latitude <= 1.290 and 103.825 <= longitude <= 103.835:  # Tiong Bahru box
+            applied_multiplier = max(applied_multiplier, 1.60)
 
-        # === 7️⃣ Dynamic Confidence Calculation (FIXED) ===
-        confidence_base = 0.86  
+        if applied_multiplier != 1.0:
+            old_price = predicted_price
+            predicted_price *= applied_multiplier
+            print(f"[LOC_ADJ] Applied {applied_multiplier:.2f}× for {region_for_model} "
+                  f"({old_price:,.0f} → {predicted_price:,.0f})")
+
+        # --- 3️⃣ Confidence ---
+        confidence_base = 0.88
         volatility_factor = 1 - np.exp(-0.1 * property_age / 10)
-        confidence_score = round(max(50.0, (confidence_base - volatility_factor * 0.2) * 100), 1) 
-        
-        # Calculate confidence range based on the *final* predicted price
+        confidence_score = round(max(55.0, (confidence_base - volatility_factor * 0.15) * 100), 1)
+        conf_margin = (100 - confidence_score) / 100
+        conf_low = predicted_price * (1 - conf_margin)
+        conf_high = predicted_price * (1 + conf_margin)
+
+        # --- 4️⃣ DB Insert ---
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO predictions (
+                    property_id, user_id, model_type, predicted_current,
+                    confidence_low, confidence_high, confidence_score,
+                    input_data, created_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, [
+                body.get("property_id"),
+                body.get("user_id"),
+                "current_price_v12_pipeline",
+                float(predicted_price),
+                float(conf_low),
+                float(conf_high),
+                float(confidence_score / 100),
+                json.dumps(X_input.to_dict(), default=str),
+                datetime.now(),
+            ])
+
+        # --- 5️⃣ Return ---
+        return jsonify({
+            "model": "current_price_v12_pipeline",
+            "predicted_total_price": round(predicted_price, 2),
+            "predicted_price_per_sqm": round(predicted_price_per_sqm, 2),
+            "confidence_low": round(conf_low, 2),
+            "confidence_high": round(conf_high, 2),
+            "confidence_score": confidence_score,
+            "region": region_str,
+            "property_type": prop_type,
+            "tenure": tenure_str,
+            "applied_location_adjustment": applied_multiplier,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    except Exception as e:
+        print(f"[PredictCurrentErrorV12] {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+# ============================================================
+# Predict Future Resale Price (v12 pipeline – with DB insert)
+# ============================================================
+@app.post("/api/predict/future")
+def predict_future_resale_v12():
+    """
+    Predicts *future resale price* using v12 LightGBM pipeline.
+    Includes: location hotfix (V6) + localized correction multiplier (V1).
+    """
+    if pipeline is None:
+        return jsonify({"error": "v12 pipeline not loaded."}), 503
+
+    body = request.get_json(force=True) or {}
+    print(f"Incoming JSON Body (/predict/future v12): {body}")
+
+    try:
+        # --- 1️⃣ Parse Inputs ---
+        floor_area_sqm = float(body.get("floor_area_sqm") or 75)
+        region_str = str(body.get("region") or "Central").title()
+        prop_type_raw = str(body.get("property_type_final") or body.get("property_type") or "Condominium")
+        tenure_raw = str(body.get("tenure") or "99-year Leasehold")
+
+        def normalize_prop_type(v):
+            v = v.upper()
+            if "HDB" in v or "FLAT" in v or "EXECUTIVE" in v: return "HDB"
+            if "CONDO" in v or "APARTMENT" in v: return "Condominium"
+            if "TERRACE" in v or "LANDED" in v or "SEMI" in v: return "Landed"
+            return "Other"
+        prop_type = normalize_prop_type(prop_type_raw)
+
+        def normalize_tenure(v):
+            v = v.lower()
+            if "freehold" in v: return "Freehold"
+            if "999" in v: return "999-year"
+            return "99-year Leasehold"
+        tenure_str = normalize_tenure(tenure_raw)
+
+        latitude = float(body.get("latitude") or 1.35)
+        longitude = float(body.get("longitude") or 103.82)
+
+        # --- HOTFIX (V6) ---
+        location_features = get_hotfixed_location(latitude, longitude, prop_type, region_str)
+        region_for_model = location_features["region"]
+        geo_cluster_for_model = location_features["geo_cluster"]
+
+        nearest_mrt_km = float(body.get("nearest_mrt_km") or 0.8)
+        nearest_mall_km = float(body.get("nearest_mall_km") or 1.5)
+        nearest_school_km = float(body.get("nearest_school_km") or 1.0)
+        nearest_hospital_km = float(body.get("nearest_hospital_km") or 2.0)
+        nearest_park_km = float(body.get("nearest_park_km") or 1.2)
+        amenity_score = float(body.get("amenity_score") or 5.0)
+        remaining_lease = float(body.get("remaining_lease") or 90)
+        year_completed = int(body.get("year_completed") or 2010)
+
+        transaction_year = datetime.now().year
+        transaction_month = datetime.now().month
+        property_age = max(0, transaction_year - year_completed)
+
+        remaining_lease_adj = 999 if tenure_str != "99-year Leasehold" else remaining_lease
+        year_sin = np.sin(2 * np.pi * transaction_month / 12)
+        year_cos = np.cos(2 * np.pi * transaction_month / 12)
+        amenity_density = 1 / (nearest_mrt_km + nearest_mall_km +
+                               nearest_school_km + nearest_hospital_km + 1)
+        mrt_x_area = nearest_mrt_km * floor_area_sqm
+        mall_x_school = nearest_mall_km * nearest_school_km
+
+        prop_region_combo = f"{prop_type}_{region_for_model}"
+        is_prime_hdb = (prop_type == "HDB") and (region_for_model.upper() in PRIME_HDB_LOCATIONS)
+        prime_town_flag = "Prime_HDB_Area" if is_prime_hdb else "Other_Area"
+
+        input_data = {
+            "floor_area_sqm": floor_area_sqm,
+            "remaining_lease_adj": remaining_lease_adj,
+            "property_age": property_age,
+            "nearest_mrt_km": nearest_mrt_km,
+            "nearest_mall_km": nearest_mall_km,
+            "nearest_school_km": nearest_school_km,
+            "nearest_hospital_km": nearest_hospital_km,
+            "nearest_park_km": nearest_park_km,
+            "amenity_score": amenity_score,
+            "transaction_year": transaction_year,
+            "transaction_month": transaction_month,
+            "year_sin": year_sin,
+            "year_cos": year_cos,
+            "amenity_density": amenity_density,
+            "mrt_x_area": mrt_x_area,
+            "mall_x_school": mall_x_school,
+            "region": region_for_model,
+            "property_category": prop_type,
+            "tenure_clean": tenure_str,
+            "geo_cluster": geo_cluster_for_model,
+            "prop_region_combo": prop_region_combo,
+            "prime_town_flag": prime_town_flag,
+        }
+        X_input = pd.DataFrame([input_data], columns=MODEL_FEATURES)
+
+        # --- 2️⃣ Predict Base ---
+        pred_log = pipeline.predict(X_input)[0]
+        base_price = float(np.expm1(pred_log))
+
+        # --- LOCATION MULTIPLIER ---
+        ADJUSTMENTS = {
+            "Tiong Bahru": 1.60,
+            "Bukit Merah": 1.50,
+            "Queenstown": 1.20
+        }
+        applied_multiplier = 1.0
+        if region_for_model in ADJUSTMENTS:
+            applied_multiplier = ADJUSTMENTS[region_for_model]
+        if 1.280 <= latitude <= 1.290 and 103.825 <= longitude <= 103.835:
+            applied_multiplier = max(applied_multiplier, 1.60)
+
+        if applied_multiplier != 1.0:
+            old_price = base_price
+            base_price *= applied_multiplier
+            print(f"[LOC_ADJ] Applied {applied_multiplier:.2f}× for {region_for_model} "
+                  f"({old_price:,.0f} → {base_price:,.0f})")
+
+        # --- 3️⃣ Growth ---
+        YEARS_FORWARD = float(body.get("years_forward") or 3)
+        growth_key = f"{prop_type}_{region_for_model}"
+        default_growth = np.mean(list(GROWTH_RATES.values())) if GROWTH_RATES else 0.045
+        ANNUAL_GROWTH_RATE = GROWTH_RATES.get(growth_key, default_growth)
+        predicted_future_price = base_price * ((1 + ANNUAL_GROWTH_RATE) ** YEARS_FORWARD)
+
+        # --- 4️⃣ Confidence ---
+        confidence_base = 0.86
+        volatility_factor = 1 - np.exp(-0.1 * property_age / 10)
+        confidence_score = round(max(50.0, (confidence_base - volatility_factor * 0.2) * 100), 1)
         conf_margin = (100 - confidence_score) / 100
         conf_low = predicted_future_price * (1 - conf_margin)
         conf_high = predicted_future_price * (1 + conf_margin)
 
-        # === 8️⃣ Compose Result ===
-        result = {
-            "model": "future_resale_v3_dynamic",
+        # --- 5️⃣ DB Insert ---
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO predictions (
+                    property_id, user_id, model_type, predicted_price,
+                    confidence_low, confidence_high, confidence_score,
+                    input_data, created_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, [
+
+                body.get("property_id"),
+                body.get("user_id"),
+                "future_resale_v12_pipeline",
+                float(predicted_future_price),
+                float(conf_low),
+                float(conf_high),
+                float(confidence_score / 100),
+                json.dumps(X_input.to_dict(), default=str),
+                datetime.now(),
+            ])
+
+        # --- 6️⃣ Return ---
+        return jsonify({
+            "model": "future_resale_v12_pipeline",
             "floor_area_sqm": round(floor_area_sqm, 2),
             "years_forward": YEARS_FORWARD,
             "predicted_total_price": round(predicted_future_price, 2),
@@ -2185,48 +2568,18 @@ def predict_future_resale():
             "confidence_score": confidence_score,
             "annual_growth_rate": f"{ANNUAL_GROWTH_RATE*100:.2f}%",
             "market_trend": f"Projected {YEARS_FORWARD:.0f}-year resale appreciation at {ANNUAL_GROWTH_RATE*100:.2f}% annually.",
+            "applied_location_adjustment": applied_multiplier,
             "timestamp": datetime.now().isoformat(),
-            "correction_applied": correction_reason # <-- Now includes the dynamic reason
-        }
-
-        # === 9️⃣ Save Prediction (Optional) ===
-        try:
-            with get_cursor() as cur:
-                cur.execute("""
-                    INSERT INTO predictions (
-                        property_id,
-                        user_id,
-                        model_type,
-                        predicted_price,
-                        confidence_low,
-                        confidence_high,
-                        confidence_score,
-                        input_data,
-                        created_at
-                    )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, [
-                    body.get("property_id"),
-                    body.get("user_id"),
-                    str(result["model"]),
-                    float(result["predicted_total_price"]),
-                    float(result["confidence_low"]),
-                    float(result["confidence_high"]),
-                    float(result["confidence_score"]) / 100,
-                    json.dumps(X_input.to_dict(), default=str),
-                    datetime.now(),
-                ])
-            print(f"✅ Future resale prediction saved for property_id={body.get('property_id')}")
-        except Exception as e:
-            print(f"⚠️ Warning: Could not save future resale prediction: {e}")
-        
-        return jsonify(result)
+        })
 
     except Exception as e:
-        print(f"[PredictFutureResaleError] {e}")
-        import traceback
-        traceback.print_exc() # Print full error stack
-        return jsonify({"error": "An internal server error occurred.", "details": str(e)}), 500
+        print(f"[PredictFutureErrorV12] {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+
+
 
 # ============================================================
 #  Get Prediction History for Logged-in User (Frontend Friendly)
@@ -2298,7 +2651,8 @@ def get_predictions_by_property(property_id):
                     confidence_high,
                     confidence_score,
                     input_data,
-                    created_at
+                    created_at,
+                    predicted_current
                 FROM predictions
                 WHERE property_id = %s
                 ORDER BY created_at DESC
@@ -2313,75 +2667,339 @@ def get_predictions_by_property(property_id):
         return jsonify({"error": str(e)}), 500
 
 # ============================================================
-#  Get Prediction History for Logged-in User within 3km radius (Frontend Friendly)
+#  Get Prediction History for Nearby Properties (FINAL, FILTERED)
 # ============================================================
 @app.post("/api/predict/history/nearby")
 def get_predictions_near_location():
     """
     Fetch prediction history for properties within ~1 km of the given lat/lng.
-    Works on PostgreSQL without GROUP BY errors.
+    FILTERS to show ONLY 'current' price predictions.
     """
     try:
         body = request.get_json(force=True) or {}
-        lat = body.get("latitude")
-        lng = body.get("longitude")
+        lat = float(body.get("latitude", 0))
+        lng = float(body.get("longitude", 0))
 
-        if lat is None or lng is None:
+        if not lat or not lng:
             return jsonify({"error": "Missing latitude or longitude"}), 400
 
         with get_cursor() as cur:
-            # ✅ Compute distance inline and filter inside WHERE (not HAVING)
-            cur.execute("""
+            sql = """
                 SELECT 
                     p.id AS property_id,
+                    p.price AS listed_price,
                     pr.model_type,
-                    pr.predicted_price,
+                    pr.predicted_current, -- We only care about this one now
                     pr.confidence_low,
                     pr.confidence_high,
                     pr.confidence_score,
                     pr.created_at,
-                    (6371 * 2 * ASIN(SQRT(
-                        POWER(SIN(RADIANS(p.latitude - %s) / 2), 2) +
-                        COS(RADIANS(%s)) * COS(RADIANS(p.latitude)) *
-                        POWER(SIN(RADIANS(p.longitude - %s) / 2), 2)
-                    )))::numeric(10,2) AS distance_km
+                    (6371 * acos(
+                        cos(radians(%s)) * cos(radians(p.latitude)) *
+                        cos(radians(p.longitude) - radians(%s)) +
+                        sin(radians(%s)) * sin(radians(p.latitude))
+                    )) AS distance_km
                 FROM predictions pr
                 JOIN properties p ON pr.property_id = p.id
                 WHERE p.latitude IS NOT NULL 
                   AND p.longitude IS NOT NULL
-                  AND (6371 * 2 * ASIN(SQRT(
-                        POWER(SIN(RADIANS(p.latitude - %s) / 2), 2) +
-                        COS(RADIANS(%s)) * COS(RADIANS(p.latitude)) *
-                        POWER(SIN(RADIANS(p.longitude - %s) / 2), 2)
-                  ))) <= 1.0   -- within 1 km radius
+                  -- ✅ 1. THIS IS THE FIX: Only get 'current' model predictions
+                  AND pr.model_type LIKE '%%current%%' 
+                  AND (6371 * acos(
+                        cos(radians(%s)) * cos(radians(p.latitude)) *
+                        cos(radians(p.longitude) - radians(%s)) +
+                        sin(radians(%s)) * sin(radians(p.latitude))
+                    )) <= 1.0  -- Filter for 1km
                 ORDER BY pr.created_at DESC
                 LIMIT 20
-            """, [lat, lat, lng, lat, lat, lng])
+            """
+            
+            params = [lat, lng, lat, lat, lng, lat]
+            cur.execute(sql, params)
 
             rows = cur.fetchall()
 
         if not rows:
-            return jsonify({"message": "No nearby predictions found"}), 200
+            return jsonify({"history": []}), 200 # Return empty list, not message
 
         history = []
         for r in rows:
+            # --- ✅ 2. SIMPLIFIED: We know we only have predicted_current ---
+            price_val = r.get('predicted_current') 
+            price_str = "N/A"
+            if price_val is not None:
+                try:
+                    price_str = f"${float(price_val):,.2f}"
+                except (ValueError, TypeError):
+                    price_str = "N/A" 
+
+            listed_price_str = "N/A"
+            if r.get("listed_price") is not None:
+                try:
+                    listed_price_str = f"${float(r['listed_price']):,.2f}"
+                except (ValueError, TypeError):
+                    listed_price_str = "N/A"
+
+            range_str = "N/A"
+            if r.get("confidence_low") is not None and r.get("confidence_high") is not None:
+                try:
+                    range_str = f"${float(r['confidence_low']):,.2f} – ${float(r['confidence_high']):,.2f}"
+                except (ValueError, TypeError):
+                    range_str = "N/A"
+
+            confidence_str = "0%"
+            if r.get("confidence_score") is not None:
+                try:
+                    confidence_str = f"{(float(r['confidence_score']) or 0) * 100:.0f}%"
+                except (ValueError, TypeError):
+                    confidence_str = "0%"
+            
             history.append({
                 "property_id": r["property_id"],
                 "model_type": r["model_type"],
-                "predicted_price": f"${r['predicted_price']:,.2f}" if r["predicted_price"] else "N/A",
-                "confidence_range": f"${r['confidence_low']:,.2f} – ${r['confidence_high']:,.2f}"
-                    if r["confidence_low"] and r["confidence_high"] else "N/A",
-                "ai_confidence": f"{(r['confidence_score'] or 0) * 100:.0f}%",
-                "distance_km": float(r["distance_km"]),
-                "created_at": r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                "listed_price": listed_price_str,
+                "predicted_price": price_str, # This key is still named predicted_price
+                "confidence_range": range_str,
+                "ai_confidence": confidence_str,
+                "distance_km": round(float(r["distance_km"]), 2),
+                "created_at": r["created_at"].strftime("%Y-%m-%d")
             })
 
         return jsonify({"history": history}), 200
 
     except Exception as e:
         print(f"[NearbyPredictHistoryError] {e}")
+        traceback.print_exc() 
         return jsonify({"error": str(e)}), 500
 
+@app.get("/api/insights/market")
+def get_market_insights():
+    """
+    Returns AI-driven market insights for agent dashboard:
+    - Top 5 regions (AI predicted avg price per sqm)
+    - Market Mix (count per property type)
+    - Hot Region (highest avg predicted price)
+    - Overall Market Growth (%)
+    Handles sqft→sqm conversion, Decimal→float, and text normalization.
+    """
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT 
+                    p.region,
+                    p.property_type,
+                    p.price,
+                    p.size,
+                    pr.predicted_price AS ai_predicted_price
+                FROM properties p
+                LEFT JOIN (
+                    SELECT property_id, predicted_price
+                    FROM predictions
+                    WHERE predicted_price IS NOT NULL
+                ) pr ON pr.property_id = p.id
+                WHERE p.price IS NOT NULL AND p.size > 0
+            """)
+            rows = cur.fetchall()
+
+        if not rows:
+            return jsonify({"message": "No property data found"}), 200
+
+        import pandas as pd
+        df = pd.DataFrame(rows).fillna(0)
+
+        # ✅ Convert Decimal → float safely
+        for col in ["price", "size", "ai_predicted_price"]:
+            df[col] = df[col].astype(float)
+
+        # ✅ Normalize Region & Property Type
+        df["region"] = (
+            df["region"]
+            .astype(str)
+            .str.strip()
+            .str.title()
+            .replace({"Nan": "Unknown", "None": "Unknown"})
+        )
+
+        df["property_type"] = (
+            df["property_type"]
+            .astype(str)
+            .str.strip()
+            .str.title()
+            .replace({
+                "Condo": "Condominium",
+                "Apartment": "Condominium",
+                "Flat": "HDB",
+                "Hdb Flat": "HDB",
+                "Semi-Detached": "Landed",
+                "Detached": "Landed",
+                "None": "Unknown",
+                "Nan": "Unknown",
+            })
+        )
+
+        # ✅ Convert sqft → sqm if values are too large
+        if df["size"].mean() > 100:
+            df["size_sqm"] = df["size"] / 10.7639
+        else:
+            df["size_sqm"] = df["size"]
+
+        # === 1️⃣ Market Mix (by Property Type)
+        mix_by_type = df["property_type"].value_counts().to_dict()
+        if "Unknown" in mix_by_type and len(mix_by_type) > 1:
+            mix_by_type.pop("Unknown")
+
+        # === 2️⃣ Weighted avg AI price per sqm by Region
+        def weighted_avg(g):
+            total_pred = g["ai_predicted_price"].sum()
+            total_size = g["size_sqm"].sum()
+            return total_pred / total_size if total_size > 0 else 0
+
+        region_prices = (
+            df.groupby("region")
+            .apply(weighted_avg)
+            .round(2)
+            .reset_index(name="ai_price_per_sqm")
+            .sort_values("ai_price_per_sqm", ascending=False)
+        )
+
+        top_regions = region_prices.head(5).to_dict(orient="records")
+
+        # === 3️⃣ Hot Region (highest predicted price)
+        hot_region = (
+            region_prices["region"].iloc[0]
+            if not region_prices.empty and pd.notnull(region_prices["region"].iloc[0])
+            else "No active regions"
+        )
+
+        # === 4️⃣ Overall Market Growth %
+        df["growth_percent"] = ((df["ai_predicted_price"] - df["price"]) / df["price"]) * 100
+        avg_growth = round(df["growth_percent"].mean(), 2)
+
+        return jsonify({
+            "top_regions": top_regions,
+            "mix_by_type": mix_by_type,
+            "hot_region": hot_region,
+            "avg_ai_growth": avg_growth
+        }), 200
+
+    except Exception as e:
+        print(f"[MarketInsightsError] {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/insights/agent/<int:agent_id>")
+def get_agent_insights(agent_id):
+    """
+    Returns summary statistics for an agent's listings,
+    including AI confidence from the latest prediction.
+    """
+    try:
+        with get_cursor() as cur:
+            # 🧠 Join properties with predictions using property_id
+            cur.execute("""
+                SELECT 
+                    p.id AS property_id,
+                    p.price,
+                    p.size,
+                    p.region,
+                    pr.confidence_score
+                FROM properties p
+                LEFT JOIN (
+                    SELECT property_id, confidence_score, created_at
+                    FROM predictions
+                    WHERE confidence_score IS NOT NULL
+                    ORDER BY created_at DESC
+                ) pr ON pr.property_id = p.id
+                WHERE p.agent_id = %s
+            """, [agent_id])
+            rows = cur.fetchall()
+
+        if not rows:
+            return jsonify({"message": "No listings found for this agent"}), 200
+
+        # Convert to DataFrame for easier math
+        df = pd.DataFrame(rows)
+
+        # Defensive fill for missing values
+        df["size"] = df["size"].replace(0, pd.NA)
+        df["price_per_sqm"] = df["price"] / df["size"]
+        df["confidence_score"] = df["confidence_score"].fillna(0)
+
+        # Compute summary metrics
+        avg_conf = df["confidence_score"].mean() * 100  # convert to %
+        avg_price = df["price"].mean()
+        top_regions = df["region"].value_counts().head(3).to_dict()
+
+        return jsonify({
+            "listings": int(len(df)),
+            "avg_confidence": round(avg_conf, 2),
+            "avg_price": round(avg_price or 0, 2),
+            "regions": top_regions
+        }), 200
+
+    except Exception as e:
+        print(f"[AgentInsightsError] {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+
+@app.get("/api/insights/recommendations/<int:agent_id>")
+def get_ai_recommendations(agent_id):
+    """
+    Returns AI-based recommendations comparing each property's
+    current price with its latest predicted price from the predictions table.
+    """
+    try:
+        with get_cursor() as cur:
+            # 🧠 Join properties with latest predictions for that agent
+            cur.execute("""
+                SELECT 
+                    p.id AS property_id,
+                    p.location,
+                    p.price,
+                    pr.predicted_price AS predicted_future_price
+                FROM properties p
+                LEFT JOIN (
+                    SELECT property_id, predicted_price, created_at
+                    FROM predictions
+                    WHERE predicted_price IS NOT NULL
+                    ORDER BY created_at DESC
+                ) pr ON pr.property_id = p.id
+                WHERE p.agent_id = %s AND p.price IS NOT NULL
+            """, [agent_id])
+            rows = cur.fetchall()
+
+        if not rows:
+            return jsonify({"message": "No prediction data found for this agent"}), 200
+
+        df = pd.DataFrame(rows)
+        recs = []
+
+        for _, r in df.iterrows():
+            current = float(r.get("price") or 0)
+            predicted = float(r.get("predicted_future_price") or 0)
+            if not current or not predicted:
+                continue
+
+            diff = predicted - current
+            trend = (diff / current) * 100
+
+            if trend > 5:
+                recs.append({
+                    "message": f"{r['location']} expected to appreciate by {trend:.1f}%. Highlight this listing!",
+                    "type": "positive"
+                })
+            elif trend < -5:
+                recs.append({
+                    "message": f"{r['location']} predicted to soften by {abs(trend):.1f}%. Consider adjusting pricing.",
+                    "type": "negative"
+                })
+
+        return jsonify({"recommendations": recs}), 200
+
+    except Exception as e:
+        print(f"[AIRecommendationsError] {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -2895,6 +3513,7 @@ def get_prediction(property_id):
     except Exception as e:
         print("❌ Prediction fetch error:", e)
         return jsonify({"success": False, "message": "Error fetching prediction."}), 500
+
 
 
 if __name__ == "__main__":
