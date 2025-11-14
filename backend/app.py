@@ -39,6 +39,30 @@ geo_bp = Blueprint("geo", __name__)
 GOOGLE_API_KEY = "AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw"
 CLIENT_ID = "98981474983-d5h2shgl18u6oovn378q3ovao61jtbm0.apps.googleusercontent.com"  # same as frontend
 
+def verify_captcha(token):
+    secret = "6LcJcgwsAAAAAOXKQZdUHBysfCfCWyiAAf2IGFZx"
+    url = "https://www.google.com/recaptcha/api/siteverify"
+
+    res = requests.post(url, data={"secret": secret, "response": token})
+    result = res.json()
+
+    # 1️⃣ Must be technically valid
+    if not result.get("success", False):
+        return False
+
+    # 2️⃣ Score must be high enough (0.5 recommended)
+    score = result.get("score", 0)
+    if score < 0.5:
+        print("⚠️ reCAPTCHA score too low:", score)
+        return False
+
+    # 3️⃣ (Optional) Ensure action is correct if you used executeRecaptcha("login_action")
+    # action = result.get("action", "")
+    # if action != "login_action":
+    #     return False
+
+    return True
+
 # Ensure saved_properties table exists for environments that have not run latest migration yet.
 with get_cursor_cm() as cur:
     cur.execute(
@@ -172,6 +196,8 @@ CACHE_FILE = BASE_DIR / "cache" / "growth_rates.json"
 
 PRIME_HDB_LOCATIONS = ['CENTRAL', 'QUEENSTOWN', 'BUKIT MERAH', 'TOA PAYOH', 'BISHAN', 'KALLANG/WHAMPOA']
 
+LEASE_LOOKUP = {}        
+FLAT_MODEL_LOOKUP = {}   
 
 # === Growth Rate Loading Logic (Unchanged) ===
 def load_growth_rates(file_path: str):
@@ -336,6 +362,11 @@ def login():
     email = (body.get("email") or "").strip()
     password = (body.get("password") or "").strip()
     role = (body.get("role") or "").strip().lower()
+    captcha = body.get("captcha")
+
+    # 🔐 1️⃣ Validate captcha BEFORE anything else
+    if not captcha or not verify_captcha(captcha):
+        return jsonify({"error": "Captcha verification failed"}), 400
 
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
@@ -1464,6 +1495,15 @@ def delete_property(prop_id):
 @app.post("/api/register_user")
 def register_user():
     body = request.get_json(force=True) or {}
+
+    # === 1️⃣ Extract captcha ===
+    captcha = body.get("captcha")
+
+    # === 2️⃣ Validate captcha BEFORE anything else ===
+    if not captcha or not verify_captcha(captcha):
+        return jsonify({"error": "Captcha verification failed"}), 400
+
+    # === 3️⃣ Existing fields ===
     name = (body.get("name") or "").strip()
     email = (body.get("email") or "").strip().lower()
     phone = (body.get("phone") or "").strip()
@@ -2488,9 +2528,9 @@ def predict_current_price_v12():
 
         # --- ✅ LOCATION CORRECTION MULTIPLIER (inline) ---
         ADJUSTMENTS = {
-            "Tiong Bahru": 1.60,   # +60%
-            "Bukit Merah": 1.50,   # +50%
-            "Queenstown": 1.20
+           "Tiong Bahru": 1.60,   # +60%
+           "Bukit Merah": 1.50,   # +50%
+           "Queenstown": 1.20
         }
         applied_multiplier = 1.0
         if region_for_model in ADJUSTMENTS:
@@ -2730,6 +2770,153 @@ def predict_future_resale_v12():
         return jsonify({"error": str(e)}), 500
 
 
+
+# ==================================================================
+# Predict Current Price (QUICK VERSION – no DB insert)
+# ==================================================================
+@app.post("/api/predict/current/quick")
+def predict_current_price_v12_quick():
+    """
+    Predicts *current market price* using the trained v12 LightGBM pipeline.
+    Includes: location hotfix (V6) + localized correction multiplier (V1).
+    """
+    if pipeline is None:
+        return jsonify({"error": "v12 pipeline not loaded."}), 503
+
+    body = request.get_json(force=True) or {}
+    print(f"Incoming JSON Body (/predict/current v12): {body}")
+
+    try:
+        # --- 1️⃣ Parse Inputs ---
+        floor_area_sqm = float(body.get("floor_area_sqm") or 75)
+        region_str = str(body.get("region") or "Central").title()
+        prop_type_raw = str(body.get("property_type_final") or body.get("property_type") or "Condominium")
+        tenure_raw = str(body.get("tenure") or "99-year Leasehold")
+
+        def normalize_prop_type(v):
+            v = v.upper()
+            if "HDB" in v or "FLAT" in v or "EXECUTIVE" in v: return "HDB"
+            if "CONDO" in v or "APARTMENT" in v: return "Condominium"
+            if "TERRACE" in v or "LANDED" in v or "SEMI" in v: return "Landed"
+            return "Other"
+        prop_type = normalize_prop_type(prop_type_raw)
+
+        def normalize_tenure(v):
+            v = v.lower()
+            if "freehold" in v: return "Freehold"
+            if "999" in v: return "999-year"
+            return "99-year Leasehold"
+        tenure_str = normalize_tenure(tenure_raw)
+
+        latitude = float(body.get("latitude") or 1.35)
+        longitude = float(body.get("longitude") or 103.82)
+
+        # --- ✅ HOTFIX (V6) ---
+        location_features = get_hotfixed_location(latitude, longitude, prop_type, region_str)
+        region_for_model = location_features["region"]
+        geo_cluster_for_model = location_features["geo_cluster"]
+
+        nearest_mrt_km = float(body.get("nearest_mrt_km") or 0.8)
+        nearest_mall_km = float(body.get("nearest_mall_km") or 1.5)
+        nearest_school_km = float(body.get("nearest_school_km") or 1.0)
+        nearest_hospital_km = float(body.get("nearest_hospital_km") or 2.0)
+        nearest_park_km = float(body.get("nearest_park_km") or 1.2)
+        amenity_score = float(body.get("amenity_score") or 5.0)
+        remaining_lease = float(body.get("remaining_lease") or 90)
+        year_completed = int(body.get("year_completed") or 2010)
+
+        transaction_year = datetime.now().year
+        transaction_month = datetime.now().month
+        property_age = max(0, transaction_year - year_completed)
+
+        remaining_lease_adj = 999 if tenure_str != "99-year Leasehold" else remaining_lease
+        year_sin = np.sin(2 * np.pi * transaction_month / 12)
+        year_cos = np.cos(2 * np.pi * transaction_month / 12)
+        amenity_density = 1 / (nearest_mrt_km + nearest_mall_km +
+                               nearest_school_km + nearest_hospital_km + 1)
+        mrt_x_area = nearest_mrt_km * floor_area_sqm
+        mall_x_school = nearest_mall_km * nearest_school_km
+
+        prop_region_combo = f"{prop_type}_{region_for_model}"
+        is_prime_hdb = (prop_type == "HDB") and (region_for_model.upper() in PRIME_HDB_LOCATIONS)
+        prime_town_flag = "Prime_HDB_Area" if is_prime_hdb else "Other_Area"
+
+        input_data = {
+            "floor_area_sqm": floor_area_sqm,
+            "remaining_lease_adj": remaining_lease_adj,
+            "property_age": property_age,
+            "nearest_mrt_km": nearest_mrt_km,
+            "nearest_mall_km": nearest_mall_km,
+            "nearest_school_km": nearest_school_km,
+            "nearest_hospital_km": nearest_hospital_km,
+            "nearest_park_km": nearest_park_km,
+            "amenity_score": amenity_score,
+            "transaction_year": transaction_year,
+            "transaction_month": transaction_month,
+            "year_sin": year_sin,
+            "year_cos": year_cos,
+            "amenity_density": amenity_density,
+            "mrt_x_area": mrt_x_area,
+            "mall_x_school": mall_x_school,
+            "region": region_for_model,
+            "property_category": prop_type,
+            "tenure_clean": tenure_str,
+            "geo_cluster": geo_cluster_for_model,
+            "prop_region_combo": prop_region_combo,
+            "prime_town_flag": prime_town_flag,
+        }
+        X_input = pd.DataFrame([input_data], columns=MODEL_FEATURES)
+
+        # --- 2️⃣ Predict ---
+        pred_log = pipeline.predict(X_input)[0]
+        predicted_price = float(np.expm1(pred_log))
+        predicted_price_per_sqm = predicted_price / floor_area_sqm
+
+        # --- ✅ LOCATION CORRECTION MULTIPLIER (inline) ---
+        ADJUSTMENTS = {
+           "Tiong Bahru": 1.60,   # +60%
+           "Bukit Merah": 1.50,   # +50%
+           "Queenstown": 1.20
+        }
+        applied_multiplier = 1.0
+        if region_for_model in ADJUSTMENTS:
+            applied_multiplier = ADJUSTMENTS[region_for_model]
+        if 1.280 <= latitude <= 1.290 and 103.825 <= longitude <= 103.835:  # Tiong Bahru box
+            applied_multiplier = max(applied_multiplier, 1.60)
+
+        if applied_multiplier != 1.0:
+            old_price = predicted_price
+            predicted_price *= applied_multiplier
+            print(f"[LOC_ADJ] Applied {applied_multiplier:.2f}× for {region_for_model} "
+                  f"({old_price:,.0f} → {predicted_price:,.0f})")
+
+        # --- 3️⃣ Confidence ---
+        confidence_base = 0.88
+        volatility_factor = 1 - np.exp(-0.1 * property_age / 10)
+        confidence_score = round(max(55.0, (confidence_base - volatility_factor * 0.15) * 100), 1)
+        conf_margin = (100 - confidence_score) / 100
+        conf_low = predicted_price * (1 - conf_margin)
+        conf_high = predicted_price * (1 + conf_margin)
+
+        # --- 5️⃣ Return ---
+        return jsonify({
+            "model": "current_price_v12_pipeline",
+            "predicted_total_price": round(predicted_price, 2),
+            "predicted_price_per_sqm": round(predicted_price_per_sqm, 2),
+            "confidence_low": round(conf_low, 2),
+            "confidence_high": round(conf_high, 2),
+            "confidence_score": confidence_score,
+            "region": region_str,
+            "property_type": prop_type,
+            "tenure": tenure_str,
+            "applied_location_adjustment": applied_multiplier,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    except Exception as e:
+        print(f"[PredictCurrentErrorV12] {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -3384,6 +3571,8 @@ def analyze_geo():
     except Exception as e:
         print(f"[GeoAnalyzeError] {e}")
         return jsonify({"error": str(e)}), 400
+
+
 # --- Payment page ---
 # --- Payment page content (public)---
 @app.get("/api/public/payment-page")
