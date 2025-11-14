@@ -3598,10 +3598,6 @@ def list_announcements_admin():
 
 # User: My announcements
 
-
-
-
-
 @app.post("/api/my/announcements/<int:ann_id>/read")
 @auth_required
 def mark_announcement_read(ann_id):
