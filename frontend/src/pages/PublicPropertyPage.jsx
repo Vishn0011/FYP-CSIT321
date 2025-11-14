@@ -4,7 +4,7 @@ import Swal from "sweetalert2";
 import {
     MapPin, Mail, Calendar, CheckCircle, ShieldCheck,
     History, Train, ShoppingCart, School, Hospital,
-    Trees, Briefcase, Lock
+    Trees, Briefcase, Lock, Star
 } from "lucide-react";
 import api from "../api";
 import "../components/css/ViewIndividualProperties.css";
@@ -17,6 +17,18 @@ export default function PublicPropertyPage() {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [feedbackItems, setFeedbackItems] = useState([]);
+    const [feedbackSummary, setFeedbackSummary] = useState(null);
+    const [feedbackLoading, setFeedbackLoading] = useState(false);
+    const [feedbackError, setFeedbackError] = useState(null);
+    const [myFeedback, setMyFeedback] = useState(null);
+    const [feedbackForm, setFeedbackForm] = useState({
+        rating: 0,
+        title: "",
+        comment: "",
+    });
+    const [submittingFeedback, setSubmittingFeedback] = useState(false);
+
 
     const [form, setForm] = useState({
         buyer_name: "",
@@ -66,6 +78,52 @@ export default function PublicPropertyPage() {
             .finally(() => setLoading(false));
     }, [id]);
 
+    // --- 2️⃣ Fetch feedback / reviews for this property ---
+    useEffect(() => {
+        if (!id) return;
+
+        const fetchFeedback = async () => {
+            try {
+                setFeedbackLoading(true);
+                setFeedbackError(null);
+
+                const res = await api.get(`/properties/${id}/feedback`);
+                const data = res.data || {};
+                const items = Array.isArray(data.items) ? data.items : [];
+
+                setFeedbackItems(items);
+                setFeedbackSummary(data.summary || null);
+
+                if (user) {
+                    const mine = items.find((f) => f.buyer_id === user.id);
+                    if (mine) {
+                        setMyFeedback(mine);
+                        setFeedbackForm({
+                            rating: mine.rating || 0,
+                            title: mine.title || "",
+                            comment: mine.comment || "",
+                        });
+                    } else {
+                        setMyFeedback(null);
+                        setFeedbackForm({
+                            rating: 0,
+                            title: "",
+                            comment: "",
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to load feedback", err);
+                setFeedbackError("Failed to load reviews.");
+            } finally {
+                setFeedbackLoading(false);
+            }
+        };
+
+        fetchFeedback();
+    }, [id, user]);
+
+
     // --- 2️⃣ Fetch AI insights (only for logged-in users) ---
     useEffect(() => {
         if (!property || !id) return;
@@ -109,6 +167,92 @@ export default function PublicPropertyPage() {
             galleryRef.current.scrollBy({ left: direction * scrollAmount, behavior: "smooth" });
         }
     }
+
+    // --- Feedback helpers ---
+    const handleFeedbackChange = (e) => {
+        const { name, value } = e.target;
+        setFeedbackForm((prev) => ({
+            ...prev,
+            [name]: value,
+        }));
+    };
+
+    const handleRatingClick = (value) => {
+        setFeedbackForm((prev) => ({ ...prev, rating: value }));
+    };
+
+    const handleFeedbackSubmit = async (e) => {
+        e.preventDefault();
+
+        if (!isAuthenticated || userRole !== "homeowner") {
+            Swal.fire({
+                icon: "info",
+                title: "Sign in as a Homebuyer",
+                text: "You need to be logged in as a homebuyer to leave a review.",
+                confirmButtonColor: "#00674f",
+            });
+            return;
+        }
+
+        if (!feedbackForm.rating) {
+            Swal.fire({
+                icon: "warning",
+                title: "Rating required",
+                text: "Please select a star rating.",
+                confirmButtonColor: "#00674f",
+            });
+            return;
+        }
+
+        try {
+            setSubmittingFeedback(true);
+            const payload = {
+                rating: feedbackForm.rating,
+                title: feedbackForm.title,
+                comment: feedbackForm.comment,
+            };
+
+            const res = await api.post(`/properties/${id}/feedback`, payload);
+            const saved = res.data?.feedback || null;
+
+            Swal.fire({
+                icon: "success",
+                title: myFeedback ? "Review updated" : "Review submitted",
+                text: "Thank you for your feedback.",
+                confirmButtonColor: "#00674f",
+            });
+
+            // Refresh list locally
+            setMyFeedback(saved);
+            setFeedbackForm({
+                rating: saved?.rating || feedbackForm.rating,
+                title: saved?.title || feedbackForm.title,
+                comment: saved?.comment || feedbackForm.comment,
+            });
+
+            setFeedbackItems((prev) => {
+                if (!saved) return prev;
+                const idx = prev.findIndex((f) => f.id === saved.id);
+                if (idx === -1) {
+                    return [saved, ...prev];
+                }
+                const copy = [...prev];
+                copy[idx] = saved;
+                return copy;
+            });
+        } catch (err) {
+            console.error("Failed to submit feedback", err);
+            Swal.fire({
+                icon: "error",
+                title: "Error",
+                text: "Failed to submit your review. Please try again later.",
+                confirmButtonColor: "#00674f",
+            });
+        } finally {
+            setSubmittingFeedback(false);
+        }
+    };
+
 
     // --- Enquiry Submit Handler ---
     const handleEnquirySubmit = async () => {
@@ -222,6 +366,136 @@ export default function PublicPropertyPage() {
                             </div>
                         </div>
                     </div>
+
+                    {/* ⭐ Ratings & Reviews */}
+                    <div className="card">
+                        <div className="card-body">
+                            <h3 className="text-emerald-700 font-semibold mb-4 flex items-center gap-2">
+                                <Star className="w-5 h-5" />
+                                Ratings &amp; Reviews
+                            </h3>
+
+                            {/* Summary */}
+                            {feedbackLoading ? (
+                                <p className="text-sm text-gray-500">Loading reviews...</p>
+                            ) : feedbackError ? (
+                                <p className="text-sm text-red-500">{feedbackError}</p>
+                            ) : (
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <StarRating
+                                            value={feedbackSummary?.average_rating || 0}
+                                            readOnly
+                                            size="w-6 h-6"
+                                        />
+                                        <div>
+                                            <p className="font-semibold text-gray-800">
+                                                {feedbackSummary?.average_rating
+                                                    ? `${feedbackSummary.average_rating} / 5`
+                                                    : "No ratings yet"}
+                                            </p>
+                                            <p className="text-sm text-gray-500">
+                                                {feedbackSummary?.count
+                                                    ? `${feedbackSummary.count} review${feedbackSummary.count > 1 ? "s" : ""}`
+                                                    : "Be the first to review this property."}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* List of reviews */}
+                            {feedbackItems.length > 0 && (
+                                <div className="space-y-4 mb-6">
+                                    {feedbackItems.map((fb) => (
+                                        <div key={fb.id} className="border border-gray-200 rounded-lg p-3">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <StarRating value={fb.rating || 0} readOnly />
+                                                <span className="text-xs text-gray-500">
+                                                    {fb.buyer_name || "Homebuyer"}
+                                                </span>
+                                            </div>
+                                            {fb.title && (
+                                                <p className="font-semibold text-gray-800 text-sm">
+                                                    {fb.title}
+                                                </p>
+                                            )}
+                                            {fb.comment && (
+                                                <p className="text-gray-700 text-sm mt-1">
+                                                    {fb.comment}
+                                                </p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Form for homebuyers */}
+                            {isAuthenticated && userRole === "homeowner" && (
+                                <form onSubmit={handleFeedbackSubmit} className="space-y-3 border-t border-gray-200 pt-4">
+                                    <h4 className="font-semibold text-gray-800 text-sm">
+                                        {myFeedback ? "Update your review" : "Leave a review"}
+                                    </h4>
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-gray-600">
+                                            Rating
+                                        </label>
+                                        <StarRating
+                                            value={feedbackForm.rating}
+                                            onChange={handleRatingClick}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-gray-600">
+                                            Title (optional)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            name="title"
+                                            value={feedbackForm.title}
+                                            onChange={handleFeedbackChange}
+                                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                                            placeholder="e.g. Great agent and smooth viewing"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-gray-600">
+                                            Comment (optional)
+                                        </label>
+                                        <textarea
+                                            name="comment"
+                                            rows="3"
+                                            value={feedbackForm.comment}
+                                            onChange={handleFeedbackChange}
+                                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                                            placeholder="Share more about your experience..."
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={submittingFeedback}
+                                        className="bg-emerald-700 text-white px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-60"
+                                    >
+                                        {submittingFeedback
+                                            ? "Submitting..."
+                                            : myFeedback
+                                                ? "Update review"
+                                                : "Submit review"}
+                                    </button>
+                                </form>
+                            )}
+
+                            {!isAuthenticated && (
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Sign in as a homebuyer to leave a review.
+                                </p>
+                            )}
+                        </div>
+                    </div> 
 
                     {/* --- 🔒 AI Insights Section --- */}
                     {!isAuthenticated ? (
@@ -420,3 +694,31 @@ function ProximityItem({ icon, label, name, distance }) {
         </div>
     );
 }
+
+function StarRating({ value = 0, onChange, readOnly = false, size = "w-5 h-5" }) {
+    const handleClick = (star) => {
+        if (readOnly || !onChange) return;
+        onChange(star);
+    };
+
+    return (
+        <div className="flex items-center gap-1">
+            {[1, 2, 3, 4, 5].map((star) => {
+                const active = star <= value;
+                return (
+                    <button
+                        key={star}
+                        type="button"
+                        onClick={() => handleClick(star)}
+                        className={readOnly ? "cursor-default" : "cursor-pointer"}
+                    >
+                        <Star
+                            className={`${size} ${active ? "text-yellow-400 fill-yellow-400" : "text-gray-300"}`}
+                        />
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+

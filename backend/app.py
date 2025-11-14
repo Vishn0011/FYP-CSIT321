@@ -967,6 +967,116 @@ def get_public_property(prop_id):
 
     return jsonify(data)
 
+
+# FEEDBACK / REVIEWS (Homebuyer)
+
+
+@app.post("/api/properties/<int:prop_id>/feedback")
+@auth_required
+def upsert_property_feedback(prop_id: int):
+    """
+    Create or update feedback from the logged-in homebuyer for a specific property.
+    """
+    user = request.user
+
+    # Only homeowners (homebuyers) can leave feedback
+    if not user or user.get("role") != "homeowner":
+        return jsonify({"error": "Only homebuyers can leave feedback"}), 403
+
+    data = request.get_json(force=True) or {}
+    rating = data.get("rating")
+    title = (data.get("title") or "").strip()
+    comment = (data.get("comment") or "").strip()
+
+    # --- Basic validation ---
+    try:
+        rating = int(rating)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Rating must be an integer between 1 and 5"}), 400
+
+    if rating < 1 or rating > 5:
+        return jsonify({"error": "Rating must be between 1 and 5"}), 400
+
+    if not title and not comment:
+        return jsonify({"error": "Please provide a title or comment"}), 400
+
+    # --- Ensure property exists & is Active ---
+    prop = query_one(
+        "SELECT id FROM properties WHERE id = %s AND status = 'Active';",
+        [prop_id],
+    )
+    if not prop:
+        return jsonify({"error": "Property not found or not active"}), 404
+
+    buyer_id = user["id"]
+
+    # Upsert using unique (property_id, buyer_id)
+    sql = """
+        INSERT INTO feedback (property_id, buyer_id, rating, title, comment, status, is_deleted)
+        VALUES (%s, %s, %s, %s, %s, 'published', FALSE)
+        ON CONFLICT (property_id, buyer_id)
+        DO UPDATE SET
+            rating     = EXCLUDED.rating,
+            title      = EXCLUDED.title,
+            comment    = EXCLUDED.comment,
+            status     = EXCLUDED.status,
+            is_deleted = FALSE,
+            updated_at = NOW()
+        RETURNING id, property_id, buyer_id, rating, title, comment,
+                  status, is_deleted, created_at, updated_at;
+    """
+
+    row = execute(sql, [prop_id, buyer_id, rating, title, comment], return_row=True)
+    if not row:
+        return jsonify({"error": "Failed to save feedback"}), 500
+
+    return jsonify({"ok": True, "feedback": row}), 201
+
+
+@app.get("/api/properties/<int:prop_id>/feedback")
+def list_property_feedback(prop_id: int):
+    """
+    Public: list published, non-deleted feedback for a property, plus summary.
+    """
+    rows = query_all(
+        """
+        SELECT
+            f.id,
+            f.property_id,
+            f.buyer_id,
+            f.rating,
+            f.title,
+            f.comment,
+            f.status,
+            f.created_at,
+            u.name AS buyer_name
+        FROM feedback f
+        JOIN users u ON u.id = f.buyer_id
+        WHERE f.property_id = %s
+          AND f.status = 'published'
+          AND NOT f.is_deleted
+        ORDER BY f.created_at DESC;
+        """,
+        [prop_id],
+    )
+
+    total = len(rows)
+    avg_rating = None
+    if total > 0:
+        total_score = sum(int(r.get("rating") or 0) for r in rows)
+        avg_rating = round(total_score / total, 2)
+
+    return jsonify(
+        {
+            "items": rows,
+            "summary": {
+                "count": total,
+                "average_rating": avg_rating,
+            },
+        }
+    )
+
+
 # --- PROPERTIES (CRUD for agent properties) ---
 #list properties by agent
 @app.get("/api/properties")
