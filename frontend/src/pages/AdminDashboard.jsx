@@ -8,9 +8,9 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token"); // or wherever you store it
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
+    const token = localStorage.getItem("token"); // or wherever you store it
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
 });
 
 export default function AdminDashboard() {
@@ -22,6 +22,32 @@ export default function AdminDashboard() {
     const [selected, setSelected] = useState(null);
     const [pendingUsers, setPendingUsers] = useState([]);
     const [loadingPred, setLoadingPred] = useState(false);
+    const [announcements, setAnnouncements] = useState([]);
+    const [annLoading, setAnnLoading] = useState(true);
+    const [annErr, setAnnErr] = useState("");
+
+
+
+
+
+
+    useEffect(() => {
+        async function fetchAnnouncements() {
+            try {
+                setAnnErr("");
+                const res = await api.get("/api/admin/announcements");
+                const list = Array.isArray(res.data) ? res.data : [];
+                // only keep first 10
+                setAnnouncements(list.slice(0, 10));
+            } catch (e) {
+                console.error("Failed to fetch announcements:", e);
+                setAnnErr("Failed to load announcements.");
+            } finally {
+                setAnnLoading(false);
+            }
+        }
+        fetchAnnouncements();
+    }, []);
 
 
 
@@ -173,6 +199,10 @@ export default function AdminDashboard() {
                         />
                         <StatCard
                             icon="campaign"
+                            value={annLoading ? "…" : announcements.length}
+                            label="Announcements"
+                        /> <StatCard
+                            icon="campaign"
                             value="8"
                             label="Announcements"
                         />
@@ -233,8 +263,8 @@ export default function AdminDashboard() {
                                                 <td className="p-3">
                                                     <span
                                                         className={`px-2 py-1 text-xs font-semibold rounded-full ${u.is_active
-                                                                ? "text-green-800 bg-green-100"
-                                                                : "text-red-800 bg-red-100"
+                                                            ? "text-green-800 bg-green-100"
+                                                            : "text-red-800 bg-red-100"
                                                             }`}
                                                     >
                                                         {u.is_active
@@ -290,11 +320,11 @@ export default function AdminDashboard() {
                                                 <td className="p-3">
                                                     <span
                                                         className={`px-2 py-1 text-xs font-semibold rounded-full ${p.status === "Active"
-                                                                ? "text-green-800 bg-green-100"
-                                                                : p.status ===
-                                                                    "Pending"
-                                                                    ? "text-yellow-800 bg-yellow-100"
-                                                                    : "text-gray-800 bg-gray-100"
+                                                            ? "text-green-800 bg-green-100"
+                                                            : p.status ===
+                                                                "Pending"
+                                                                ? "text-yellow-800 bg-yellow-100"
+                                                                : "text-gray-800 bg-gray-100"
                                                             }`}
                                                     >
                                                         {p.status}
@@ -428,50 +458,46 @@ export default function AdminDashboard() {
                             title="Announcements"
                             onViewAll={() => navigate("/admin/announcements")}
                         >
-                            <table className="w-full text-left">
-                                <thead className="border-b border-gray-200">
-                                    <tr>
-                                        <th className="p-3 font-semibold text-gray-500">
-                                            Title
-                                        </th>
-                                        <th className="p-3 font-semibold text-gray-500">
-                                            Visibility
-                                        </th>
-                                        <th className="p-3 font-semibold text-gray-500">
-                                            Date
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr className="border-b hover:bg-gray-50">
-                                        <td className="p-3">
-                                            Welcome to the New AgentPro!
-                                        </td>
-                                        <td className="p-3">
-                                            <span className="px-2 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full">
-                                                Public
-                                            </span>
-                                        </td>
-                                        <td className="p-3 text-gray-500">
-                                            Jul 15, 2025
-                                        </td>
-                                    </tr>
-                                    <tr className="border-b hover:bg-gray-50">
-                                        <td className="p-3">
-                                            Scheduled Maintenance on Friday
-                                        </td>
-                                        <td className="p-3">
-                                            <span className="px-2 py-1 text-xs font-semibold text-purple-800 bg-purple-100 rounded-full">
-                                                Agents Only
-                                            </span>
-                                        </td>
-                                        <td className="p-3 text-gray-500">
-                                            Jul 18, 2025
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                            {annLoading ? (
+                                <p className="text-sm text-gray-500">Loading…</p>
+                            ) : annErr ? (
+                                <p className="text-sm text-red-600">{annErr}</p>
+                            ) : announcements.length === 0 ? (
+                                <p className="text-sm text-gray-500">No announcements yet.</p>
+                            ) : (
+                                <table className="w-full text-left">
+                                    <thead className="border-b border-gray-200">
+                                        <tr>
+                                            <th className="p-3 font-semibold text-gray-500">
+                                                Title
+                                            </th>
+                                            <th className="p-3 font-semibold text-gray-500">
+                                                Visibility
+                                            </th>
+                                            <th className="p-3 font-semibold text-gray-500">
+                                                Date
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {announcements.map((a) => (
+                                            <tr key={a.id} className="border-b hover:bg-gray-50">
+                                                <td className="p-3">{a.title}</td>
+                                                <td className="p-3">
+                                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700">
+                                                        {formatVisibility(a.roles)}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 text-gray-500">
+                                                    {formatAnnDate(a.starts_at || a.created_at)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </Section>
+
 
                         {/* Manage Homepage Features */}
                         <Section
@@ -527,6 +553,28 @@ export default function AdminDashboard() {
         </div>
     );
 }
+
+function formatVisibility(roles) {
+    if (!roles || roles.length === 0) return "Everyone";
+    if (!Array.isArray(roles)) return String(roles);
+
+    const pretty = roles.map((r) => {
+        const v = String(r || "").toLowerCase();
+        if (v === "agent") return "Agents";
+        if (v === "homeowner") return "Homebuyers";
+        if (v === "admin") return "Admins";
+        return r;
+    });
+    return pretty.join(", ");
+}
+
+function formatAnnDate(value) {
+    if (!value) return "-";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString();
+}
+
 
 /* --- Small components --- */
 function StatCard({ icon, value, label }) {
@@ -641,8 +689,8 @@ function ManageDropdowns() {
                                 <td className="p-2">
                                     <span
                                         className={`px-2 py-1 text-xs font-semibold rounded-full ${opt.status === "active"
-                                                ? "bg-green-100 text-green-700"
-                                                : "bg-red-100 text-red-700"
+                                            ? "bg-green-100 text-green-700"
+                                            : "bg-red-100 text-red-700"
                                             }`}
                                     >
                                         {opt.status}

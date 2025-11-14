@@ -1,77 +1,138 @@
+// src/pages/AdminAnnouncementNew.jsx
 import { useNavigate, Link } from "react-router-dom";
 import { useState } from "react";
+import api from "../api";
+
+const ROLE_OPTIONS = [
+  { value: "admin", label: "Admins" },
+  { value: "agent", label: "Agents" },
+  { value: "homeowner", label: "Homebuyers" },
+];
 
 export default function AdminAnnouncementNew() {
   const nav = useNavigate();
   const [title, setTitle] = useState("");
-  const [visibility, setVisibility] = useState("Public");
   const [content, setContent] = useState("");
+  const [selectedRoles, setSelectedRoles] = useState(["admin", "agent", "homeowner"]); // default = everyone
+  const [saving, setSaving] = useState(false);
 
-  function handleSubmit(e) {
+  function toggleRole(role) {
+    setSelectedRoles((prev) =>
+      prev.includes(role)
+        ? prev.filter((r) => r !== role)
+        : [...prev, role]
+    );
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    // demo only
-    alert("Announcement created (demo).");
-    nav("/admin/announcements");
+
+    if (!title.trim() || !content.trim()) {
+      alert("Title and content are required.");
+      return;
+    }
+
+    if (selectedRoles.length === 0) {
+      alert("Select at least one audience (Admins, Agents, Homebuyers).");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await api.post("/admin/announcements", {
+        title: title.trim(),
+        body_md: content.trim(),
+        roles: selectedRoles,       // 👈 goes into announcement_targets.role_in
+      });
+
+      alert("Announcement created.");
+      nav("/admin/announcements");
+    } catch (err) {
+      console.error(err);
+      const msg =
+        err?.response?.data?.error ||
+        err?.message ||
+        "Failed to create announcement.";
+      alert(msg);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* <header className="bg-emerald-500 text-white shadow">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 h-14">
-          <h1 className="text-lg font-bold">AgentPro</h1>
-          <nav className="text-sm">
-            <Link to="/admin/announcements" className="hover:underline">Announcements</Link>
-          </nav>
-        </div>
-      </header> */}
-
       <main className="pt-6">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-6 text-3xl font-bold text-gray-900">Create Announcement</h2>
+          <h2 className="mb-6 text-3xl font-bold text-gray-900">
+            Create Announcement
+          </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-6 rounded-lg bg-white p-6 shadow">
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-6 rounded-lg bg-white p-6 shadow"
+          >
+            {/* Title */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Title</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Title
+              </label>
               <input
                 className="mt-1 w-full rounded-md border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
-                placeholder="e.g., Scheduled Maintenance – RDS (11pm–1am)"
+                placeholder="e.g. Scheduled Maintenance – RDS (11pm–1am)"
                 value={title}
-                onChange={(e)=>setTitle(e.target.value)}
+                onChange={(e) => setTitle(e.target.value)}
                 required
               />
             </div>
 
+            {/* Audience (checkboxes) */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Visibility</label>
-              <select
-                className="mt-1 w-full rounded-md border-gray-300 text-gray-700 focus:border-emerald-500 focus:ring-emerald-500"
-                value={visibility}
-                onChange={(e)=>setVisibility(e.target.value)}
-              >
-                <option>Public</option>
-                <option>Agents Only</option>
-                <option>Admins Only</option>
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Audience
+              </label>
+              <p className="mb-2 text-xs text-gray-500">
+                Choose which user types will see this announcement when they log in.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                {ROLE_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className="inline-flex items-center gap-2 text-sm text-gray-700"
+                  >
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      checked={selectedRoles.includes(opt.value)}
+                      onChange={() => toggleRole(opt.value)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
             </div>
 
+            {/* Content */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Content</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Content
+              </label>
               <textarea
                 rows={6}
                 className="mt-1 w-full rounded-md border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
                 placeholder="Short announcement text…"
                 value={content}
-                onChange={(e)=>setContent(e.target.value)}
+                onChange={(e) => setContent(e.target.value)}
               />
-              <p className="mt-1 text-xs text-gray-500">Demo page – not saving to backend (yet).</p>
             </div>
 
+            {/* Actions */}
             <div className="flex items-center gap-3">
               <button
                 type="submit"
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                disabled={saving}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
               >
-                Publish
+                {saving ? "Publishing…" : "Publish"}
               </button>
               <Link
                 to="/admin/announcements"
@@ -82,9 +143,13 @@ export default function AdminAnnouncementNew() {
             </div>
           </form>
 
-          {/* Back to dashboard */}
           <div className="py-8">
-            <Link to="/admin/dashboard" className="text-emerald-600 hover:underline text-sm">← Back to admin home page</Link>
+            <Link
+              to="/admin/dashboard"
+              className="text-emerald-600 hover:underline text-sm"
+            >
+              ← Back to admin home page
+            </Link>
           </div>
         </div>
       </main>
