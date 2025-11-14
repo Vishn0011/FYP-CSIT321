@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import request, jsonify
 from config import SESSION_TTL_MIN
-from db import get_cursor  # we'll add this helper in db.py
+from db import get_cursor_cm, query_one, execute, get_conn
 
 def make_token() -> str:
     # URL-safe opaque token (~43 chars)
@@ -24,7 +24,7 @@ def auth_required(fn):
         token = _extract_bearer(request)
         if not token:
             return jsonify({"error": "missing bearer token"}), 401
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 SELECT u.id, u.email, u.name, u.role
                 FROM sessions s
@@ -44,7 +44,7 @@ def create_session(user_id: int, minutes: int | None = None):
     ttl = minutes if minutes is not None else SESSION_TTL_MIN
     token = make_token()
     exp = expires_at(ttl)
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute(
             "INSERT INTO sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
             [user_id, token, exp],

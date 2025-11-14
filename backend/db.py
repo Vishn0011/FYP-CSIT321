@@ -1,120 +1,127 @@
 import os
-import atexit
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from psycopg2.pool import SimpleConnectionPool
 from dotenv import load_dotenv
 from contextlib import contextmanager
 
 load_dotenv()
+
 DATABASE_URL = os.getenv("DATABASE_URL")
-POOL_MIN = int(os.getenv("DB_POOL_MIN", 1))
-POOL_MAX = int(os.getenv("DB_POOL_MAX", 10))
-
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set")
-
-_pool = SimpleConnectionPool(
-    POOL_MIN,
-    POOL_MAX,
-    DATABASE_URL,
-    cursor_factory=RealDictCursor,
-)
 
 
-def _get_connection():
-    if _pool is None:
-        raise RuntimeError("Database connection pool was not initialised")
-    return _pool.getconn()
-
-
-def _put_connection(conn):
-    if _pool is not None and conn is not None:
-        _pool.putconn(conn)
-
-
-@contextmanager
-def get_cursor():
-    conn = _get_connection()
-    try:
-        with conn.cursor() as cur:
-            yield cur
-            conn.commit()
-    finally:
-        _put_connection(conn)
-
-
-@contextmanager
 def get_conn():
-    conn = _get_connection()
+    """Return a raw psycopg2 connection or None if it fails."""
     try:
-        yield conn
-        conn.commit()
-    finally:
-        _put_connection(conn)
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        print("❌ Database connection error:", e)
+        return None
 
-    except Exception:
+
+def get_cursor():
+    """
+    Low-level helper: returns (conn, cur) using RealDictCursor.
+    NOT a context manager. Used internally.
+    """
+    conn = get_conn()
+    if conn is None:
+        return None, None
+
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        return conn, cur
+    except Exception as e:
+        print("❌ Failed to create cursor:", e)
+        conn.close()
+        return None, None
+
+
+@contextmanager
+def get_cursor_cm():
+    """
+    High-level helper: proper context manager for:
+
+        with get_cursor_cm() as cur:
+            cur.execute(...)
+
+    Automatically commits on success, rollbacks on error, and closes connection.
+    """
+    conn, cur = get_cursor()
+    if cur is None:
+        # Yield None so caller can handle it gracefully
+        yield None
+        return
+
+    try:
+        yield cur
+        conn.commit()
+    except Exception as e:
+        print("❌ DB error in context manager:", e)
         conn.rollback()
         raise
     finally:
-        cur.close()
+        conn.close()
 
-# -----------------------------
-# Helper functions
-# -----------------------------
 
 def query_all(sql, params=None):
-    conn = _get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, params or [])
-            return cur.fetchall()
-    finally:
-        _put_connection(conn)
+    """Run a SELECT that returns multiple rows."""
+    conn, cur = get_cursor()
+    if cur is None:
+        return []
 
-
-def execute(sql, params=None, return_row=False):
-    conn = _get_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute(sql, params or [])
-            if return_row:
-                try:
-                    row = cur.fetchone()
-                except Exception:
-                    row = None
-                conn.commit()
-                return row
-            conn.commit()
+        cur.execute(sql, params)
+        results = cur.fetchall()
+        return results
+    except Exception as e:
+        print("❌ Query error (all):", e)
+        return []
     finally:
-        _put_connection(conn)
+        conn.close()
 
 
 def query_one(sql, params=None):
-    with get_cursor() as cur:
-        cur.execute(sql, params or [])
-        row = cur.fetchone()
-        return dict(row) if row else None
+    """Run a SELECT that returns a single row."""
+    conn, cur = get_cursor()
+    if cur is None:
+        return None
+
+    try:
+        cur.execute(sql, params)
+        result = cur.fetchone()
+        return result
+    except Exception as e:
+        print("❌ Query error (one):", e)
+        return None
+    finally:
+        conn.close()
 
 
-@atexit.register
-def _close_pool():
-    if _pool is not None:
-        _pool.closeall()
+def execute(sql, params=None, return_row=False):
+    """
+    Run INSERT/UPDATE/DELETE.
+    - If return_row=False → returns True/False
+    - If return_row=True  → returns one row (RealDict) or None on failure
+    """
+    conn, cur = get_cursor()
+    if cur is None:
+        return None if return_row else False
 
+    try:
+        cur.execute(sql, params)
 
+        if return_row:
+            row = cur.fetchone()
+            conn.commit()
+            return row
 
-# def query_all(sql, params=None):
-#     with get_conn() as conn, conn.cursor() as cur:
-#         cur.execute(sql, params or [])
-#         return cur.fetchall()
+        conn.commit()
+        return True
 
-# def execute(sql, params=None, return_row=False):
-#     with get_conn() as conn, conn.cursor() as cur:
-#         cur.execute(sql, params or [])
-#         if return_row:
-#             try:
-#                 return cur.fetchone()
-#             except Exception:
-#                 return None
-#         conn.commit()
+    except Exception as e:
+        print("❌ Execution error:", e)
+        conn.rollback()
+        return None if return_row else False
+    finally:
+        conn.close()

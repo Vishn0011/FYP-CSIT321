@@ -3,7 +3,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, Blueprint
 from flask_cors import CORS
 from dotenv import load_dotenv
-from db import query_all, execute, get_cursor, get_conn, query_one
+from db import query_all, execute, get_cursor_cm, get_conn, query_one
 from auth import make_token, expires_at, auth_required, create_session
 from config import PORT, ALLOW_ORIGIN, SESSION_TTL_MIN, DEBUG
 import json
@@ -40,7 +40,7 @@ GOOGLE_API_KEY = "AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw"
 CLIENT_ID = "98981474983-d5h2shgl18u6oovn378q3ovao61jtbm0.apps.googleusercontent.com"  # same as frontend
 
 # Ensure saved_properties table exists for environments that have not run latest migration yet.
-with get_cursor() as cur:
+with get_cursor_cm() as cur:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS saved_properties (
@@ -51,7 +51,7 @@ with get_cursor() as cur:
         )
         """
     )
-with get_cursor() as cur:
+with get_cursor_cm() as cur:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS agent_applications (
@@ -67,7 +67,7 @@ with get_cursor() as cur:
         """
     )
 
-with get_cursor() as cur:
+with get_cursor_cm() as cur:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS homeowner_preferences (
@@ -312,7 +312,7 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 def get_current_user():
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute("""
             SELECT u.id, u.email, u.role
             FROM sessions s
@@ -343,7 +343,7 @@ def login():
     if role not in ("agent", "homeowner"):
         return jsonify({"error": "invalid role"}), 400
 
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         # Authenticate
         cur.execute("""
             SELECT id, email, name, role, is_active, status
@@ -414,7 +414,7 @@ def admin_login():
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
 
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute("""
             SELECT id, email, name, role, is_active,
                    (crypt(%s, password_hash) = password_hash) AS pw_match
@@ -465,7 +465,7 @@ def google_login():
         idinfo = id_token.verify_oauth2_token(token, grequests.Request(), CLIENT_ID)
         email = idinfo["email"]
 
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 SELECT id, email, name, role, is_active, status
                 FROM users
@@ -485,7 +485,7 @@ def google_login():
         # Issue session token
         session_token = make_token()
         exp = expires_at(SESSION_TTL_MIN)
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 INSERT INTO sessions(user_id, token, expires_at)
                 VALUES (%s, %s, %s)
@@ -509,7 +509,7 @@ def google_signup():
         name = idinfo.get("name", "")
 
         # check if user already exists
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("SELECT id FROM users WHERE email = %s", [email])
             if cur.fetchone():
                 return jsonify({"error": "Account already exists"}), 409
@@ -522,7 +522,7 @@ def google_signup():
 
         # Insert with fake password hash
         fake_hash = "google-oauth"
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 INSERT INTO users (email, name, role, password_hash, is_active, status)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -549,7 +549,7 @@ def me():
 @app.post("/auth/logout")
 @auth_required
 def logout():
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute("DELETE FROM sessions WHERE token = %s", [request.token])
     return jsonify({"ok": True})
 
@@ -558,7 +558,7 @@ def logout():
 @auth_required
 def get_profile():
     user_id = request.user["id"]
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute(
             """
             SELECT id, email, name, role, phone, status, is_active, created_at, updated_at
@@ -597,7 +597,7 @@ def update_profile():
 
     params.append(request.user["id"])
 
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute(
             f"""
             UPDATE users
@@ -630,7 +630,7 @@ def update_password():
 
     user_id = request.user["id"]
 
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute(
             "SELECT password_hash FROM users WHERE id = %s",
             [user_id],
@@ -670,7 +670,7 @@ def list_users():
 
 @app.get("/api/users/pending")
 def get_pending_users():
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute("""
             SELECT id, name, email, role, status, is_active
             FROM users
@@ -682,7 +682,7 @@ def get_pending_users():
 
 @app.patch("/api/users/<int:user_id>/approve")
 def approve_user(user_id):
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute("""
             UPDATE users
             SET is_active = TRUE, status = 'approved'
@@ -769,7 +769,7 @@ def recent_properties():
 #admin approve property
 @app.patch("/api/properties/<int:prop_id>/approve")
 def approve_property(prop_id):
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute("""
             UPDATE properties
             SET status = 'Active'
@@ -1425,7 +1425,7 @@ def delete_property(prop_id):
 #    password = body.get("password") or ""
 #
 #    try:
-#        with get_conn() as conn, conn.cursor() as cur:
+#        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
 #            cur.execute(
 #                """
 #                INSERT INTO users
@@ -1504,7 +1504,7 @@ def register_user():
     status = "pending" if is_agent else "approved"
 
     try:
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 INSERT INTO users
@@ -1658,7 +1658,7 @@ def add_saved_property(prop_id: int):
     exists = query_all("SELECT id FROM properties WHERE id = %s", [prop_id])
     if not exists:
         return jsonify({"error": "Property not found"}), 404
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute(
             """
             INSERT INTO saved_properties (user_id, property_id)
@@ -1736,7 +1736,7 @@ def upsert_homeowner_preferences():
 #        return jsonify({"ok": False, "error": "Name is required"}), 400
 #
 #    try:
-#        with get_conn() as conn, conn.cursor() as cur:
+#        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
 #            cur.execute(
 #                """
 #                INSERT INTO dropdown_options (type, name, status)
@@ -1771,7 +1771,7 @@ def add_dropdown_option(option_type):
 
     try:
         # use shared connection + RealDictCursor
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute(
                 """
                 INSERT INTO dropdown_options (type, name, status)
@@ -1803,7 +1803,7 @@ def add_dropdown_option(option_type):
 #@app.get("/api/options/<option_type>")
 #def get_dropdown_options(option_type):
 #    try:
-#        with get_conn() as conn, conn.cursor() as cur:
+#        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
 #            cur.execute(
 #                """
 #                SELECT id, name, status
@@ -1831,7 +1831,7 @@ def add_dropdown_option(option_type):
 @app.get("/api/options/<option_type>")
 def get_dropdown_options(option_type):
     try:
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute(
                 """
                 SELECT id, name, status
@@ -1867,7 +1867,7 @@ def get_dropdown_options(option_type):
 #        return jsonify({"ok": False, "error": "Invalid status"}), 400
 #
 #    try:
-#        with get_conn() as conn, conn.cursor() as cur:
+#        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
 #            cur.execute(
 #                """
 #                UPDATE dropdown_options
@@ -1904,7 +1904,7 @@ def update_dropdown_status(option_id):
         return jsonify({"ok": False, "error": "Invalid status"}), 400
 
     try:
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute(
                 """
                 UPDATE dropdown_options
@@ -1949,7 +1949,7 @@ def create_enquiry():
         return jsonify({"ok": False, "error": "Missing required fields"}), 400
 
     try:
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 INSERT INTO enquiries (property_id, agent_id, buyer_name, buyer_email, buyer_phone, message)
@@ -1986,7 +1986,7 @@ def get_agent_enquiries(agent_id):
         # Get optional status filter (e.g., /api/enquiries/agent/5?status=Pending)
         status_filter = request.args.get("status")
 
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Base query
             base_query = """
                 SELECT e.id, e.property_id, p.title AS property_title,
@@ -2045,7 +2045,7 @@ def update_enquiry_status(enquiry_id):
         return jsonify({"ok": False, "error": "Invalid status"}), 400
 
     try:
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 UPDATE enquiries
@@ -2080,7 +2080,7 @@ def update_enquiry_status(enquiry_id):
 @app.get("/api/chat/<int:enquiry_id>")
 def get_chat_messages(enquiry_id):
     try:
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 SELECT id, enquiry_id, sender_id, message, created_at
@@ -2122,7 +2122,7 @@ def add_chat_message():
         if not enquiry_id or not sender_id or not message:
             return jsonify({"ok": False, "error": "Missing required fields"}), 400
 
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             # === Insert chat message ===
             cur.execute(
                 """
@@ -2136,7 +2136,7 @@ def add_chat_message():
             conn.commit()
 
         # === Fetch context info ===
-        with get_conn() as conn, conn.cursor() as cur:
+        with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 SELECT 
@@ -2161,7 +2161,7 @@ def add_chat_message():
         # === Check if this is agent's first message ===
         should_send_email = False
         if info and info["agent_id"] == sender_id:
-            with get_conn() as conn, conn.cursor() as cur:
+            with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
                     SELECT COUNT(*) AS msg_count
@@ -2513,7 +2513,7 @@ def predict_current_price_v12():
         conf_high = predicted_price * (1 + conf_margin)
 
         # --- 4️⃣ DB Insert ---
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 INSERT INTO predictions (
                     property_id, user_id, model_type, predicted_current,
@@ -2687,7 +2687,7 @@ def predict_future_resale_v12():
         conf_high = predicted_future_price * (1 + conf_margin)
 
         # --- 5️⃣ DB Insert ---
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 INSERT INTO predictions (
                     property_id, user_id, model_type, predicted_price,
@@ -2744,7 +2744,7 @@ def get_prediction_history():
         if not user_id:
             return jsonify({"error": "Missing user_id"}), 400
 
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 SELECT 
                     id,
@@ -2790,7 +2790,7 @@ def get_predictions_by_property(property_id):
     Used by PropertyDetails.jsx to display saved AI insights.
     """
     try:
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 SELECT 
                     id,
@@ -2835,7 +2835,7 @@ def get_predictions_near_location():
         if not lat or not lng:
             return jsonify({"error": "Missing latitude or longitude"}), 400
 
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             sql = """
                 SELECT 
                     p.id AS property_id,
@@ -2935,7 +2935,7 @@ def get_market_insights():
     Handles sqft→sqm conversion, Decimal→float, and text normalization.
     """
     try:
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 SELECT 
                     p.region,
@@ -3046,7 +3046,7 @@ def get_agent_insights(agent_id):
     including AI confidence from the latest prediction.
     """
     try:
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             # 🧠 Join properties with predictions using property_id
             cur.execute("""
                 SELECT 
@@ -3102,7 +3102,7 @@ def get_ai_recommendations(agent_id):
     current price with its latest predicted price from the predictions table.
     """
     try:
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             # 🧠 Join properties with latest predictions for that agent
             cur.execute("""
                 SELECT 
@@ -3388,7 +3388,7 @@ def analyze_geo():
 # --- Payment page content (public)---
 @app.get("/api/public/payment-page")
 def get_payment_page_public():
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute("SELECT id, title, subtitle, disclaimer, updated_at FROM payment_pages LIMIT 1;")
         row = cur.fetchone()
         if not row:
@@ -3423,7 +3423,7 @@ def update_payment_page_admin():
     if not _require_admin():
         return jsonify({"error":"admin only"}), 403
     data = request.get_json(force=True) or {}
-    with get_cursor() as cur:
+    with get_cursor_cm() as cur:
         cur.execute("SELECT id FROM payment_pages LIMIT 1;")
         exists = cur.fetchone()
         if exists:
@@ -3513,19 +3513,19 @@ def payments_checkout():
         role    = (request.user.get("role") or "homeowner").lower()
 
         # 3) ensure stripe customer id
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("SELECT stripe_customer_id FROM users WHERE id=%s", [user_id])
             row = cur.fetchone()
             stripe_customer_id = row["stripe_customer_id"] if row else None
         if not stripe_customer_id:
             cust = stripe.Customer.create(email=email, metadata={"app_user_id": str(user_id), "role": role})
-            with get_cursor() as cur:
+            with get_cursor_cm() as cur:
                 cur.execute("UPDATE users SET stripe_customer_id=%s WHERE id=%s", [cust.id, user_id])
             stripe_customer_id = cust.id
         print("[checkout] customer", stripe_customer_id, flush=True)
 
         # 4) fetch plan
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("SELECT id, stripe_price_id, is_active FROM plans WHERE id=%s", [plan_id])
             plan = cur.fetchone()
         print("[checkout] plan", plan, flush=True)
@@ -3598,7 +3598,7 @@ def stripe_webhook():
             started_at = datetime.fromtimestamp(s.start_date, tz=timezone.utc) if getattr(s, "start_date", None) else None
             period_end = datetime.fromtimestamp(s.current_period_end, tz=timezone.utc) if getattr(s, "current_period_end", None) else None
 
-            with get_cursor() as cur:
+            with get_cursor_cm() as cur:
                 cur.execute("""
                     INSERT INTO subscriptions (user_id, plan_id, stripe_subscription_id, stripe_status, started_at, current_period_end)
                     VALUES (%s, %s, %s, %s, %s, %s)
@@ -3613,7 +3613,7 @@ def stripe_webhook():
         sub_id = s["id"]
         status = s["status"]
         period_end = s.get("current_period_end")
-        with get_cursor() as cur:
+        with get_cursor_cm() as cur:
             cur.execute("""
                 UPDATE subscriptions
                 SET stripe_status=%s,
