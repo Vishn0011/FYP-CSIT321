@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import * as Icons from "lucide-react"; // dynamic icons
 import {
@@ -130,7 +130,7 @@ export default function HomePage() {
                             >
                                 {p.photos && p.photos.length > 0 && (
                                     <img
-                                        src={JSON.parse(p.photos)[0]}
+                                        src={p.photos[0]} 
                                         alt={p.title}
                                         className="w-full h-40 object-cover"
                                     />

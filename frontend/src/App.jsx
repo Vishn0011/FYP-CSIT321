@@ -24,6 +24,7 @@ import AdminListings from "./pages/AdminListings.jsx";
 import AdminAnnouncements from "./pages/AdminAnnouncements.jsx";
 import AdminAnnouncementNew from "./pages/AdminAnnouncementNew.jsx";
 import Payment from "./pages/Payment";
+import ProfilePage from "./pages/ProfilePage";
 
 
 // ==========================
@@ -81,7 +82,8 @@ function Dashboard() {
 // Main App
 // ==========================
 export default function App() {
-    return (
+ return (
+    <div className="min-h-screen bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-50 transition-colors">
         <BrowserRouter>
             <AuthProvider>
                 {/* Nav is outside Routes so it always shows */}
@@ -118,6 +120,14 @@ export default function App() {
                         element={
                             <RequireAuth>
                                 <Dashboard />
+                            </RequireAuth>
+                        }
+                    />
+                    <Route
+                        path="/profile"
+                        element={
+                            <RequireAuth>
+                                <ProfilePage />
                             </RequireAuth>
                         }
                     />
@@ -224,13 +234,17 @@ export default function App() {
 
 
                     {/*Guest routes */}
+                    <Route path="/" element={<LoginPage />} />
                     <Route path="/home" element={<HomePage />} />
                     <Route path="/signup" element={<SignUp />} />
-                    + <Route path="/payment" element={<Payment />} />
+                    <Route path="/payment" element={<Payment />} />
                     {/* Default fallback */}
-                    <Route path="*" element={<HomePage />} />
+                    <Route path="*" element={<LoginPage />} />
                 </Routes>
             </AuthProvider>
         </BrowserRouter>
+    </div>
     );
 }
+
+

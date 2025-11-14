@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import api from "./api";
 
 const AuthContext = createContext();
@@ -6,37 +6,70 @@ const AuthContext = createContext();
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
     const [token, setToken] = useState(null);
-    const [loading, setLoading] = useState(true); // Add this
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const savedUser = localStorage.getItem("user");
         const savedToken = localStorage.getItem("token");
-        if (savedUser && savedToken) {
-            setUser(JSON.parse(savedUser));
+
+        if (savedUser) {
+            try {
+                setUser(JSON.parse(savedUser));
+            } catch {
+                localStorage.removeItem("user");
+            }
+        }
+
+        if (savedToken) {
             setToken(savedToken);
             api.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
         }
-        setLoading(false); // Done checking
+
+        setLoading(false);
+    }, []);
+
+    const setUserData = useCallback((nextUserOrUpdater) => {
+        setUser((prev) => {
+            const resolved =
+                typeof nextUserOrUpdater === "function"
+                    ? nextUserOrUpdater(prev)
+                    : nextUserOrUpdater;
+
+            if (resolved) {
+                localStorage.setItem("user", JSON.stringify(resolved));
+                return resolved;
+            }
+
+            localStorage.removeItem("user");
+            return null;
+        });
     }, []);
 
     const login = (userData, tokenData) => {
-        setUser(userData);
-        setToken(tokenData);
-        localStorage.setItem("user", JSON.stringify(userData));
-        localStorage.setItem("token", tokenData);
-        api.defaults.headers.common["Authorization"] = `Bearer ${tokenData}`;
+        if (userData) {
+            setUserData(userData);
+        }
+
+        if (tokenData) {
+            setToken(tokenData);
+            localStorage.setItem("token", tokenData);
+            api.defaults.headers.common["Authorization"] = `Bearer ${tokenData}`;
+        } else {
+            setToken(null);
+            localStorage.removeItem("token");
+            delete api.defaults.headers.common["Authorization"];
+        }
     };
 
     const logout = () => {
-        setUser(null);
+        setUserData(null);
         setToken(null);
-        localStorage.removeItem("user");
         localStorage.removeItem("token");
         delete api.defaults.headers.common["Authorization"];
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+        <AuthContext.Provider value={{ user, token, loading, login, logout, updateUser: setUserData }}>
             {children}
         </AuthContext.Provider>
     );

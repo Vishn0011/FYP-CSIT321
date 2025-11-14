@@ -4,6 +4,7 @@ import axios from "axios";
 import "./css/PropertiesPage.css";
 import { Link, useNavigate } from "react-router-dom";
 import ChatModal from "../components/ChatModel";
+import ExploreInsights from "../components/ExploreInsights";
 
 
 const api = axios.create({
@@ -336,18 +337,18 @@ export default function PropertiesPage() {
                 </div>
             </div>
 
-            {/* Smart Insights */}
+            {/* === Explore Insights === */}
             <div className="card mt-24">
                 <div className="card-body">
-                    <h3>Smart Insights</h3>
-                    <p>
-                        Leverage AI-powered recommendations to optimize your listings and reach the right buyers.
+                    <h3 className="text-lg font-semibold mb-2">Explore Insights</h3>
+                    <p className="text-sm text-gray-600 mb-6">
+                        View AI-driven analytics, your listing performance, and smart recommendations.
                     </p>
-                    <button className="btn btn-primary mt-16">
-                        Explore Insights
-                    </button>
+
+                    <ExploreInsights agentId={agentId} />
                 </div>
             </div>
+
         </div>
     );
 }

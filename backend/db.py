@@ -1,39 +1,58 @@
 import os
+import atexit
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2.pool import SimpleConnectionPool
 from dotenv import load_dotenv
 from contextlib import contextmanager
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
+POOL_MIN = int(os.getenv("DB_POOL_MIN", 1))
+POOL_MAX = int(os.getenv("DB_POOL_MAX", 10))
 
-# -----------------------------
-# Simple shared connection
-# -----------------------------
-_conn = None
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set")
 
-def get_conn():
-    """
-    Return a reused psycopg2 connection instead of creating
-    a brand new one for every query.
-    """
-    global _conn
-    if _conn is None or _conn.closed != 0:
-        # You can add sslmode/etc in DATABASE_URL if needed.
-        _conn = psycopg2.connect(DATABASE_URL)
-    return _conn
+_pool = SimpleConnectionPool(
+    POOL_MIN,
+    POOL_MAX,
+    DATABASE_URL,
+    cursor_factory=RealDictCursor,
+)
+
+
+def _get_connection():
+    if _pool is None:
+        raise RuntimeError("Database connection pool was not initialised")
+    return _pool.getconn()
+
+
+def _put_connection(conn):
+    if _pool is not None and conn is not None:
+        _pool.putconn(conn)
+
 
 @contextmanager
 def get_cursor():
-    """
-    Yield a RealDictCursor and handle commit/rollback.
-    Reuses the shared connection above.
-    """
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    conn = _get_connection()
     try:
-        yield cur
+        with conn.cursor() as cur:
+            yield cur
+            conn.commit()
+    finally:
+        _put_connection(conn)
+
+
+@contextmanager
+def get_conn():
+    conn = _get_connection()
+    try:
+        yield conn
         conn.commit()
+    finally:
+        _put_connection(conn)
+
     except Exception:
         conn.rollback()
         raise
@@ -45,20 +64,57 @@ def get_cursor():
 # -----------------------------
 
 def query_all(sql, params=None):
-    with get_cursor() as cur:
-        cur.execute(sql, params or [])
-        return cur.fetchall()
+    conn = _get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params or [])
+            return cur.fetchall()
+    finally:
+        _put_connection(conn)
+
 
 def execute(sql, params=None, return_row=False):
-    with get_cursor() as cur:
-        cur.execute(sql, params or [])
-        if return_row:
-            row = cur.fetchone()
-            return dict(row) if row else None
-        # commit handled by get_cursor()
+    conn = _get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params or [])
+            if return_row:
+                try:
+                    row = cur.fetchone()
+                except Exception:
+                    row = None
+                conn.commit()
+                return row
+            conn.commit()
+    finally:
+        _put_connection(conn)
+
 
 def query_one(sql, params=None):
     with get_cursor() as cur:
         cur.execute(sql, params or [])
         row = cur.fetchone()
         return dict(row) if row else None
+
+
+@atexit.register
+def _close_pool():
+    if _pool is not None:
+        _pool.closeall()
+
+
+
+# def query_all(sql, params=None):
+#     with get_conn() as conn, conn.cursor() as cur:
+#         cur.execute(sql, params or [])
+#         return cur.fetchall()
+
+# def execute(sql, params=None, return_row=False):
+#     with get_conn() as conn, conn.cursor() as cur:
+#         cur.execute(sql, params or [])
+#         if return_row:
+#             try:
+#                 return cur.fetchone()
+#             except Exception:
+#                 return None
+#         conn.commit()
