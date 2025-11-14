@@ -27,7 +27,8 @@ import requests
 from psycopg2 import OperationalError
 import stripe
 from decimal import Decimal
-import requests, time
+import requests
+from datetime import datetime, timezone
 
 from pathlib import Path
 
@@ -3483,6 +3484,218 @@ def update_plan_admin(pid):
     if not row:
         return jsonify({"error":"not found"}), 404
     return jsonify(row)
+
+
+
+
+
+
+# Admin: Announcements CRUD
+
+@app.post("/api/admin/announcements")
+@auth_required
+def create_announcement_admin():
+    if not _require_admin():
+        return jsonify({"error": "admin only"}), 403
+
+    data = request.get_json(force=True) or {}
+    title = (data.get("title") or "").strip()
+    body_md = (data.get("body_md") or "").strip()
+    roles = data.get("roles") or []
+
+    if not title or not body_md:
+        return jsonify({"error": "title and content are required"}), 400
+
+    now = datetime.now(timezone.utc)
+
+    # 🔽 NEW: map / default to integers
+    # If frontend doesn’t send anything, we just default to 1.
+    try:
+        priority = int(data.get("priority")) if data.get("priority") is not None else 1
+    except (TypeError, ValueError):
+        priority = 1
+
+    try:
+        status_val = int(data.get("status")) if data.get("status") is not None else 1
+    except (TypeError, ValueError):
+        status_val = 1
+
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            INSERT INTO announcements
+                (title, body_md, kind,
+                 channel_web, channel_email,
+                 priority, status,
+                 starts_at, ends_at,
+                 created_by)
+            VALUES (%s,%s,%s,
+                    %s,%s,
+                    %s,%s,
+                    %s,%s,
+                    %s)
+            RETURNING id, title, body_md, status, starts_at, ends_at, created_at
+            """,
+            [
+                title,
+                body_md,
+                data.get("kind") or "general",
+                bool(data.get("channel_web", True)),
+                bool(data.get("channel_email", False)),
+                priority,
+                status_val,
+                data.get("starts_at") or now,
+                data.get("ends_at"),
+                request.user["id"],
+            ],
+        )
+        ann = cur.fetchone()
+
+        cur.execute(
+            """
+            INSERT INTO announcement_targets
+                (announcement_id, role_in, property_type_in, include_user_ids, exclude_user_ids)
+            VALUES (%s, %s, NULL, NULL, NULL)
+            """,
+            [
+                ann["id"],
+                roles if roles else None,
+            ],
+        )
+
+    return jsonify(ann), 201
+
+
+@app.get("/api/admin/announcements")
+@auth_required
+def list_announcements_admin():
+    """Admin list of all announcements + basic targeting."""
+    if not _require_admin():
+        return jsonify({"error": "admin only"}), 403
+
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            SELECT
+                a.id,
+                a.title,
+                a.status,
+                a.priority,
+                a.starts_at,
+                a.ends_at,
+                a.created_at,
+                t.role_in AS roles
+            FROM announcements a
+            LEFT JOIN announcement_targets t
+              ON t.announcement_id = a.id
+            ORDER BY a.created_at DESC
+            """
+        )
+        rows = cur.fetchall()
+
+    return jsonify(rows)
+
+
+# User: My announcements
+
+
+@app.get("/api/my/announcements")
+@auth_required
+def my_announcements():
+    """
+    Returns active web announcements targeted at the current user,
+    excluding those they have dismissed.
+    """
+    user = request.user
+    user_id = user["id"]
+    role = str(user.get("role", "")).lower()
+    now = datetime.now(timezone.utc)
+
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            SELECT
+                a.id,
+                a.title,
+                a.body_md,
+                a.priority,
+                a.starts_at,
+                a.ends_at,
+                a.created_at,
+                ua.read_at,
+                ua.dismissed_at
+            FROM announcements a
+            LEFT JOIN announcement_targets t
+              ON t.announcement_id = a.id
+            LEFT JOIN user_announcements ua
+              ON ua.announcement_id = a.id
+             AND ua.user_id = %s
+            WHERE a.channel_web = TRUE
+              AND (a.starts_at IS NULL OR a.starts_at <= %s)
+              AND (a.ends_at   IS NULL OR a.ends_at   >= %s)
+              AND (ua.dismissed_at IS NULL)     -- 👈 don't return dismissed
+              AND (
+                    t.announcement_id IS NULL   -- no targeting row = everyone
+                    OR t.role_in IS NULL        -- or no role filter
+                    OR %s = ANY(t.role_in)      -- or this user's role is included
+                  )
+            ORDER BY a.priority DESC,
+                     a.starts_at DESC NULLS LAST,
+                     a.created_at DESC
+            """,
+            [user_id, now, now, role],
+        )
+        rows = cur.fetchall()
+
+        # Mark delivered
+        for r in rows:
+            cur.execute(
+                """
+                INSERT INTO user_announcements (announcement_id, user_id, delivered_at)
+                VALUES (%s, %s, now())
+                ON CONFLICT (announcement_id, user_id) DO NOTHING
+                """,
+                [r["id"], user_id],
+            )
+
+    return jsonify(rows)
+
+
+@app.post("/api/my/announcements/<int:ann_id>/read")
+@auth_required
+def mark_announcement_read(ann_id):
+    user_id = request.user["id"]
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            INSERT INTO user_announcements (announcement_id, user_id, delivered_at, read_at)
+            VALUES (%s, %s, now(), now())
+            ON CONFLICT (announcement_id, user_id)
+            DO UPDATE SET read_at = now()
+            """,
+            [ann_id, user_id],
+        )
+    return jsonify({"ok": True})
+
+
+@app.post("/api/my/announcements/<int:ann_id>/dismiss")
+@auth_required
+def dismiss_announcement(ann_id):
+    user_id = request.user["id"]
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            INSERT INTO user_announcements (announcement_id, user_id, delivered_at, dismissed_at)
+            VALUES (%s, %s, now(), now())
+            ON CONFLICT (announcement_id, user_id)
+            DO UPDATE SET dismissed_at = now()
+            """,
+            [ann_id, user_id],
+        )
+    return jsonify({"ok": True})
+
+
+
 
 # --- Stripe (payment service) checkout ---
 @app.post("/api/payments/checkout")
