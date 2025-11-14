@@ -1,4 +1,5 @@
 ﻿import os, re
+from pathlib import Path
 from flask import Flask, jsonify, request, Blueprint
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -159,14 +160,14 @@ from datetime import datetime
 import traceback # Ensure this is imported for error handling
 
 # --- ✅ v12: Point to your folder and the ONE pipeline file ---
-MODEL_DIR = "joblib" 
-PIPELINE_PATH = os.path.join(MODEL_DIR, "lgbm_property_pipeline_v12.joblib")
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_DIR = BASE_DIR / "joblib"
+PIPELINE_PATH = MODEL_DIR / "lgbm_property_pipeline_v12.joblib"
 
 # --- Data Paths (Update as needed) ---
-DATA_PATH = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\excel\Cleaned_Merged_Property_Transactions_v2.xlsx"
-CACHE_FILE = r"C:\Users\lorry\OneDrive\Documents\GitHub\FYP-CSIT321\backend\cache\growth_rates.json"
+DATA_PATH = BASE_DIR / "excel" / "Cleaned_Merged_Property_Transactions_v2.xlsx"
+CACHE_FILE = BASE_DIR / "cache" / "growth_rates.json"
 
-# --- ✅ v12: Prime HDB Locations used in v12 training script ---
 PRIME_HDB_LOCATIONS = ['CENTRAL', 'QUEENSTOWN', 'BUKIT MERAH', 'TOA PAYOH', 'BISHAN', 'KALLANG/WHAMPOA']
 
 LEASE_LOOKUP = {}        

@@ -193,27 +193,30 @@ export default function SignUp() {
         }
     }
 
+    const inputClasses =
+        "w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500";
+
 
     return (
-        <main className="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
-            <section className="flex items-center justify-center flex-1 pt-24 pb-16 px-4 sm:px-6 lg:px-8">
+        <main className="min-h-screen flex flex-col bg-gray-50 text-gray-800 transition-colors dark:bg-zinc-950 dark:text-zinc-100">
+            <section className="flex items-center justify-center flex-1 pt-24 pb-16 px-4 sm:px-6 lg:px-8 transition-colors">
                 <div className="w-full max-w-md space-y-8">
-                    <div className="bg-white p-8 shadow-lg rounded-xl">
+                    <div className="rounded-2xl border border-gray-200 bg-white/95 p-8 shadow-xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
                         <div className="text-center mb-8">
-                            <h1 className="text-3xl font-bold text-gray-900">
+                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
                                 Create your account
                             </h1>
                         </div>
 
                         {/* Role selector */}
                         <div className="mb-6">
-                            <div className="flex bg-gray-100 rounded-lg p-1">
+                            <div className="flex bg-gray-100 rounded-lg p-1 dark:bg-zinc-800/60">
                                 <button
                                     type="button"
                                     onClick={() => updateRole("agent")}
                                     className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition ${role === "agent"
-                                            ? "bg-white shadow text-gray-700"
-                                            : "text-gray-500"
+                                            ? "bg-white shadow text-gray-700 dark:bg-zinc-900 dark:text-white"
+                                            : "text-gray-500 dark:text-zinc-400"
                                         }`}
                                 >
                                     Property Agent
@@ -222,8 +225,8 @@ export default function SignUp() {
                                     type="button"
                                     onClick={() => updateRole("homeowner")}
                                     className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition ${role === "homeowner"
-                                            ? "bg-white shadow text-gray-700"
-                                            : "text-gray-500"
+                                            ? "bg-white shadow text-gray-700 dark:bg-zinc-900 dark:text-white"
+                                            : "text-gray-500 dark:text-zinc-400"
                                         }`}
                                 >
                                     Homeowner
@@ -238,7 +241,7 @@ export default function SignUp() {
                             <div>
                                 <label
                                     htmlFor="name"
-                                    className="block text-sm font-medium text-gray-700"
+                                    className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                 >
                                     Name
                                 </label>
@@ -249,12 +252,12 @@ export default function SignUp() {
                                         value={form.name}
                                         onChange={onChange}
                                         required
-                                        className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                        className={inputClasses}
                                         placeholder="Your full name"
                                     />
                                 </div>
                                 {fieldErrors.name && (
-                                    <span className="text-sm text-red-600 mt-1 block">
+                                    <span className="text-sm text-red-600 dark:text-red-400 mt-1 block">
                                         {fieldErrors.name}
                                     </span>
                                 )}
@@ -264,7 +267,7 @@ export default function SignUp() {
                             <div>
                                 <label
                                     htmlFor="email"
-                                    className="block text-sm font-medium text-gray-700"
+                                    className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                 >
                                     Email address
                                 </label>
@@ -276,12 +279,12 @@ export default function SignUp() {
                                         value={form.email}
                                         onChange={onChange}
                                         required
-                                        className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                        className={inputClasses}
                                         placeholder="you@example.com"
                                     />
                                 </div>
                                 {fieldErrors.email && (
-                                    <span className="text-sm text-red-600 mt-1 block">
+                                    <span className="text-sm text-red-600 dark:text-red-400 mt-1 block">
                                         {fieldErrors.email}
                                     </span>
                                 )}
@@ -291,7 +294,7 @@ export default function SignUp() {
                             <div>
                                 <label
                                     htmlFor="phone"
-                                    className="block text-sm font-medium text-gray-700"
+                                    className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                 >
                                     Phone number
                                 </label>
@@ -303,12 +306,12 @@ export default function SignUp() {
                                         value={form.phone}
                                         onChange={onChange}
                                         required
-                                        className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                        className={inputClasses}
                                         placeholder="+65 91234567"
                                     />
                                 </div>
                                 {fieldErrors.phone && (
-                                    <span className="text-sm text-red-600 mt-1 block">
+                                    <span className="text-sm text-red-600 dark:text-red-400 mt-1 block">
                                         {fieldErrors.phone}
                                     </span>
                                 )}
@@ -318,7 +321,7 @@ export default function SignUp() {
                             <div>
                                 <label
                                     htmlFor="password"
-                                    className="block text-sm font-medium text-gray-700"
+                                    className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                 >
                                     Password
                                 </label>
@@ -331,13 +334,13 @@ export default function SignUp() {
                                         onChange={onChange}
                                         required
                                         minLength={8}
-                                        className="w-full px-3 py-2 pr-12 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
-                                        placeholder="••••••••"
+                                        className={`${inputClasses} pr-12`}
+                                        placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowPw((s) => !s)}
-                                        className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500"
+                                        className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 dark:text-zinc-400"
                                     >
                                         <span className="material-symbols-outlined text-lg">
                                             {showPw ? "visibility_off" : "visibility"}
@@ -350,7 +353,7 @@ export default function SignUp() {
                             <div>
                                 <label
                                     htmlFor="confirmPassword"
-                                    className="block text-sm font-medium text-gray-700"
+                                    className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                 >
                                     Confirm password
                                 </label>
@@ -363,13 +366,13 @@ export default function SignUp() {
                                         onChange={onChange}
                                         required
                                         minLength={8}
-                                        className="w-full px-3 py-2 pr-12 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
-                                        placeholder="••••••••"
+                                        className={`${inputClasses} pr-12`}
+                                        placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowConfirmPw((s) => !s)}
-                                        className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500"
+                                        className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 dark:text-zinc-400"
                                     >
                                         <span className="material-symbols-outlined text-lg">
                                             {showConfirmPw ? "visibility_off" : "visibility"}
@@ -382,17 +385,17 @@ export default function SignUp() {
                             {role === "agent" && (
                                 <div className="border-t border-gray-200 pt-4 space-y-4">
                                     <div>
-                                        <h3 className="text-sm font-semibold text-gray-700">
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-zinc-100">
                                             Property Agent Verification
                                         </h3>
-                                        <p className="text-xs text-gray-500 mt-1">
+                                        <p className="text-xs text-gray-500 mt-1 dark:text-zinc-400">
                                             Provide your CEA credentials so we can verify your account before activation.
                                         </p>
                                     </div>
                                     <div>
                                         <label
                                             htmlFor="agencyName"
-                                            className="block text-sm font-medium text-gray-700"
+                                            className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                         >
                                             Agency name
                                         </label>
@@ -403,12 +406,12 @@ export default function SignUp() {
                                                 value={form.agencyName}
                                                 onChange={onChange}
                                                 required
-                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                                className={inputClasses}
                                                 placeholder="Your agency / brokerage"
                                             />
                                         </div>
                                         {fieldErrors.agencyName && (
-                                            <span className="text-sm text-red-600 mt-1 block">
+                                            <span className="text-sm text-red-600 dark:text-red-400 mt-1 block">
                                                 {fieldErrors.agencyName}
                                             </span>
                                         )}
@@ -416,7 +419,7 @@ export default function SignUp() {
                                     <div>
                                         <label
                                             htmlFor="ceaRegNo"
-                                            className="block text-sm font-medium text-gray-700"
+                                            className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                         >
                                             CEA registration number
                                         </label>
@@ -428,12 +431,12 @@ export default function SignUp() {
                                                 onChange={onChange}
                                                 required
                                                 maxLength={8}
-                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 uppercase"
+                                                className={`${inputClasses} uppercase`}
                                                 placeholder="R123456X"
                                             />
                                         </div>
                                         {fieldErrors.ceaRegNo && (
-                                            <span className="text-sm text-red-600 mt-1 block">
+                                            <span className="text-sm text-red-600 dark:text-red-400 mt-1 block">
                                                 {fieldErrors.ceaRegNo}
                                             </span>
                                         )}
@@ -441,7 +444,7 @@ export default function SignUp() {
                                     <div>
                                         <label
                                             htmlFor="agencyLicenseNo"
-                                            className="block text-sm font-medium text-gray-700"
+                                            className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                         >
                                             Agency licence number
                                         </label>
@@ -453,12 +456,12 @@ export default function SignUp() {
                                                 onChange={onChange}
                                                 required
                                                 maxLength={9}
-                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 uppercase"
+                                                className={`${inputClasses} uppercase`}
                                                 placeholder="L7654321X"
                                             />
                                         </div>
                                         {fieldErrors.agencyLicenseNo && (
-                                            <span className="text-sm text-red-600 mt-1 block">
+                                            <span className="text-sm text-red-600 dark:text-red-400 mt-1 block">
                                                 {fieldErrors.agencyLicenseNo}
                                             </span>
                                         )}
@@ -466,7 +469,7 @@ export default function SignUp() {
                                     <div>
                                         <label
                                             htmlFor="yearsExperience"
-                                            className="block text-sm font-medium text-gray-700"
+                                            className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                         >
                                             Years of experience
                                         </label>
@@ -481,12 +484,12 @@ export default function SignUp() {
                                                 value={form.yearsExperience}
                                                 onChange={onChange}
                                                 required
-                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                                className={inputClasses}
                                                 placeholder="e.g. 5"
                                             />
                                         </div>
                                         {fieldErrors.yearsExperience && (
-                                            <span className="text-sm text-red-600 mt-1 block">
+                                            <span className="text-sm text-red-600 dark:text-red-400 mt-1 block">
                                                 {fieldErrors.yearsExperience}
                                             </span>
                                         )}
@@ -494,7 +497,7 @@ export default function SignUp() {
                                     <div>
                                         <label
                                             htmlFor="idLast4"
-                                            className="block text-sm font-medium text-gray-700"
+                                            className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                         >
                                             NRIC / FIN prefix + last 3 digits (optional)
                                         </label>
@@ -505,12 +508,12 @@ export default function SignUp() {
                                                 value={form.idLast4}
                                                 onChange={onChange}
                                                 maxLength={4}
-                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700 uppercase"
+                                                className={`${inputClasses} uppercase`}
                                                 placeholder="S123"
                                             />
                                         </div>
                                         {fieldErrors.idLast4 && (
-                                            <span className="text-sm text-red-600 mt-1 block">
+                                            <span className="text-sm text-red-600 dark:text-red-400 mt-1 block">
                                                 {fieldErrors.idLast4}
                                             </span>
                                         )}
@@ -518,7 +521,7 @@ export default function SignUp() {
                                     <div>
                                         <label
                                             htmlFor="supportingUrl"
-                                            className="block text-sm font-medium text-gray-700"
+                                            className="block text-sm font-medium text-gray-700 dark:text-zinc-200"
                                         >
                                             Supporting document URL (optional)
                                         </label>
@@ -529,7 +532,7 @@ export default function SignUp() {
                                                 type="url"
                                                 value={form.supportingUrl}
                                                 onChange={onChange}
-                                                className="w-full px-3 py-2 rounded-lg border border-gray-300 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:border-emerald-700"
+                                                className={inputClasses}
                                                 placeholder="https://drive.google.com/..."
                                             />
                                         </div>
@@ -545,15 +548,15 @@ export default function SignUp() {
                                     name="agreeTerms"
                                     checked={form.agreeTerms}
                                     onChange={onChange}
-                                    className="h-4 w-4 text-emerald-700 focus:ring-emerald-700 border-gray-300 rounded"
+                                    className="h-4 w-4 rounded border-gray-300 text-emerald-700 focus:ring-emerald-700 dark:border-zinc-600 dark:bg-zinc-900"
                                 />
-                                <label htmlFor="agreeTerms" className="text-sm text-gray-700">
+                                <label htmlFor="agreeTerms" className="text-sm text-gray-700 dark:text-zinc-200">
                                     I agree to the{" "}
                                     <a
                                         href="#"
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="text-emerald-700 hover:text-emerald-900"
+                                        className="text-emerald-700 hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200"
                                     >
                                         Terms and Conditions
                                     </a>{" "}
@@ -562,7 +565,7 @@ export default function SignUp() {
                                         href="#"
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="text-emerald-700 hover:text-emerald-900"
+                                        className="text-emerald-700 hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200"
                                     >
                                         Privacy Policy
                                     </a>
@@ -572,7 +575,7 @@ export default function SignUp() {
 
                             <div className="flex gap-3 flex-wrap">
                                 <button
-                                    className="w-full flex justify-center py-3 px-4 rounded-lg text-sm font-medium text-white bg-emerald-800 hover:bg-emerald-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-700 disabled:opacity-60"
+                                    className="w-full flex justify-center py-3 px-4 rounded-lg text-sm font-medium text-white bg-emerald-800 hover:bg-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-60"
                                     type="submit"
                                     disabled={submitting}
                                 >
@@ -584,13 +587,13 @@ export default function SignUp() {
                         {/* Divider */}
                         <div className="my-6 flex items-center">
                             <div className="flex-grow border-t border-gray-300"></div>
-                            <span className="mx-4 text-gray-400 text-sm">or sign up with</span>
+                            <span className="mx-4 text-gray-400 text-sm dark:text-zinc-400">or sign up with</span>
                             <div className="flex-grow border-t border-gray-300"></div>
                         </div>
 
                         {/* Google Sign-up button */}
                         {role === "agent" ? (
-                            <p className="text-sm text-gray-500 text-center">
+                            <p className="text-sm text-gray-500 text-center dark:text-zinc-400">
                                 Google sign-up is unavailable for Property Agents. Please complete the verification form above.
                             </p>
                         ) : (
@@ -602,10 +605,10 @@ export default function SignUp() {
                             </div>
                         )}
 
-                        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+                        {error && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error}</p>}
                     </div>
 
-                    <div className="text-center text-sm text-gray-600">
+                    <div className="text-center text-sm text-gray-600 dark:text-zinc-400">
                         <p>
                             Already have an account?{" "}
                             <Link
