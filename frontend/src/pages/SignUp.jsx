@@ -1,7 +1,9 @@
-// src/SignUp.jsx
+﻿// src/SignUp.jsx
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { GoogleLogin } from "@react-oauth/google";
+import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
+
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -26,6 +28,7 @@ export default function SignUp() {
     const [fieldErrors, setFieldErrors] = useState({});
     const [showPw, setShowPw] = useState(false);
     const [showConfirmPw, setShowConfirmPw] = useState(false);
+    const { executeRecaptcha } = useGoogleReCaptcha();
 
     const [role, setRole] = useState("homeowner");
     const updateRole = (nextRole) => {
@@ -67,6 +70,7 @@ export default function SignUp() {
         setError("");
         setFieldErrors({});
 
+        // Existing validation logic...
         const errs = {};
         if (!form.agreeTerms)
             errs.agreeTerms = "Please accept the Terms and Privacy Policy.";
@@ -74,6 +78,7 @@ export default function SignUp() {
             errs.confirmPassword = "Passwords do not match.";
         if (!EMAIL_RE.test(form.email.trim()))
             errs.email = "Enter a valid email address.";
+
         const phoneNorm = form.phone.replace(/[-\s]/g, "");
         if (!PHONE_SG_RE.test(phoneNorm))
             errs.phone = "Enter a valid Singapore phone number.";
@@ -89,6 +94,7 @@ export default function SignUp() {
             normalizedCea = form.ceaRegNo.trim().toUpperCase();
             if (!CEA_REG_RE.test(normalizedCea))
                 errs.ceaRegNo = "Use the format R123456X.";
+
             normalizedLicense = form.agencyLicenseNo.trim().toUpperCase();
             if (!AGENCY_LICENSE_RE.test(normalizedLicense))
                 errs.agencyLicenseNo = "Use the format L7654321X.";
@@ -97,9 +103,8 @@ export default function SignUp() {
                 errs.yearsExperience = "Enter your years of experience.";
             } else {
                 parsedYears = Number.parseInt(form.yearsExperience, 10);
-                if (!Number.isFinite(parsedYears) || parsedYears < 0 || parsedYears > 60) {
+                if (!Number.isFinite(parsedYears) || parsedYears < 0 || parsedYears > 60)
                     errs.yearsExperience = "Enter a value between 0 and 60.";
-                }
             }
 
             normalizedId = form.idLast4.trim().toUpperCase();
@@ -112,6 +117,7 @@ export default function SignUp() {
             return;
         }
 
+        // === Payload ===
         const payload = {
             name: form.name.trim(),
             email: form.email.trim(),
@@ -129,6 +135,12 @@ export default function SignUp() {
             if (form.supportingUrl.trim()) payload.supporting_url = form.supportingUrl.trim();
         }
 
+        // === RUN CAPTCHA — ADDED HERE ===
+        if (executeRecaptcha) {
+            const captchaToken = await executeRecaptcha("signup_action");
+            payload.captcha = captchaToken; // <-- ADDED
+        }
+
         try {
             setSubmitting(true);
             const res = await fetch(`${API_BASE}/api/register_user`, {
@@ -136,14 +148,14 @@ export default function SignUp() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
             });
+
             const data = await res.json().catch(() => null);
 
             if (res.status === 409) {
-                setFieldErrors({
-                    email: "An account with that email already exists.",
-                });
+                setFieldErrors({ email: "An account with that email already exists." });
                 return;
             }
+
             if (!res.ok) {
                 if (res.status === 400 && data?.field) {
                     setFieldErrors({ [data.field]: data.error });
@@ -153,9 +165,7 @@ export default function SignUp() {
             }
 
             if (role === "agent") {
-                setError(
-                    "Your account is pending admin approval. You will be notified once approved."
-                );
+                setError("Your account is pending admin approval.");
             } else {
                 navigate("/payment", {
                     state: { role, email: form.email.trim() },
@@ -167,7 +177,6 @@ export default function SignUp() {
             setSubmitting(false);
         }
     };
-
 
     // Google signup
     async function handleGoogleSignup(credentialResponse) {

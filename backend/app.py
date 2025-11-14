@@ -37,6 +37,30 @@ geo_bp = Blueprint("geo", __name__)
 GOOGLE_API_KEY = "AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw"
 CLIENT_ID = "98981474983-d5h2shgl18u6oovn378q3ovao61jtbm0.apps.googleusercontent.com"  # same as frontend
 
+def verify_captcha(token):
+    secret = "6LcJcgwsAAAAAOXKQZdUHBysfCfCWyiAAf2IGFZx"
+    url = "https://www.google.com/recaptcha/api/siteverify"
+
+    res = requests.post(url, data={"secret": secret, "response": token})
+    result = res.json()
+
+    # 1️⃣ Must be technically valid
+    if not result.get("success", False):
+        return False
+
+    # 2️⃣ Score must be high enough (0.5 recommended)
+    score = result.get("score", 0)
+    if score < 0.5:
+        print("⚠️ reCAPTCHA score too low:", score)
+        return False
+
+    # 3️⃣ (Optional) Ensure action is correct if you used executeRecaptcha("login_action")
+    # action = result.get("action", "")
+    # if action != "login_action":
+    #     return False
+
+    return True
+
 # Ensure saved_properties table exists for environments that have not run latest migration yet.
 with get_cursor() as cur:
     cur.execute(
@@ -336,6 +360,11 @@ def login():
     email = (body.get("email") or "").strip()
     password = (body.get("password") or "").strip()
     role = (body.get("role") or "").strip().lower()
+    captcha = body.get("captcha")
+
+    # 🔐 1️⃣ Validate captcha BEFORE anything else
+    if not captcha or not verify_captcha(captcha):
+        return jsonify({"error": "Captcha verification failed"}), 400
 
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
@@ -1420,6 +1449,15 @@ def delete_property(prop_id):
 @app.post("/api/register_user")
 def register_user():
     body = request.get_json(force=True) or {}
+
+    # === 1️⃣ Extract captcha ===
+    captcha = body.get("captcha")
+
+    # === 2️⃣ Validate captcha BEFORE anything else ===
+    if not captcha or not verify_captcha(captcha):
+        return jsonify({"error": "Captcha verification failed"}), 400
+
+    # === 3️⃣ Existing fields ===
     name = (body.get("name") or "").strip()
     email = (body.get("email") or "").strip().lower()
     phone = (body.get("phone") or "").strip()

@@ -1,7 +1,8 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { GoogleLogin } from "@react-oauth/google";
+import { useGoogleReCaptcha } from "react-google-recaptcha-v3"; // <-- ADDED
 
 export default function LoginPage() {
     const nav = useNavigate();
@@ -12,6 +13,8 @@ export default function LoginPage() {
     const { login } = useAuth();
     const [err, setErr] = useState(null);
     const [loading, setLoading] = useState(false);
+
+    const { executeRecaptcha } = useGoogleReCaptcha(); // <-- ADDED
 
     async function onSubmit(e) {
         e.preventDefault();
@@ -24,11 +27,23 @@ export default function LoginPage() {
 
         setLoading(true);
         try {
+            // --- 1️⃣ Run reCAPTCHA ---
+            let captchaToken = null;
+            if (executeRecaptcha) {
+                captchaToken = await executeRecaptcha("login_action");
+            }
+
             const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, password: pw, role }),
+                body: JSON.stringify({
+                    email,
+                    password: pw,
+                    role,
+                    captcha: captchaToken   // <-- ADDED
+                }),
             });
+
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data?.error || "Invalid credentials");
 
@@ -54,6 +69,7 @@ export default function LoginPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ token }),
             });
+
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || "Google login failed");
 
