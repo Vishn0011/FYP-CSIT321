@@ -1,4 +1,4 @@
-
+﻿
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bed, ImageOff, MapPin, Search as SearchIcon, Heart, MessageSquare } from "lucide-react";
@@ -142,7 +142,23 @@ export default function HomebuyerSearch() {
   const [prefError, setPrefError] = useState("");
   const prefInitRef = useRef(false);
   const [enquiries, setEnquiries] = useState([]);
-  const [activeChat, setActiveChat] = useState(null);
+    const [activeChat, setActiveChat] = useState(null);
+    const [quickLocation, setQuickLocation] = useState("");
+    const [quickArea, setQuickArea] = useState("");
+    const [quickType, setQuickType] = useState("HDB");
+    const [quickTenure, setQuickTenure] = useState("99-year Leasehold");
+
+    const [quickLoading, setQuickLoading] = useState(false);
+    const [quickError, setQuickError] = useState("");
+    const [quickResult, setQuickResult] = useState(null);
+    const quickInputRef = useRef(null);
+    const [quickLat, setQuickLat] = useState(null);
+    const [quickLng, setQuickLng] = useState(null);
+    const [quickLease, setQuickLease] = useState("");
+    const [quickFloor, setQuickFloor] = useState("");
+
+
+
 
   const isHomeowner = user?.role === "homeowner";
   const summaryBudget = preferences?.budget?.label || "Flexible budget";
@@ -587,6 +603,104 @@ export default function HomebuyerSearch() {
     return () => window.removeEventListener("homeowner-preferences:updated", handler);
   }, [isHomeowner, loadPreferences]);
 
+    /*google auto complete for quick location input*/
+    useEffect(() => {
+        if (!window.google) return;
+
+        const input = quickInputRef.current;
+        if (!input) return;
+
+        // Prevent double initialization
+        if (input._autocompleteAttached) return;
+        input._autocompleteAttached = true;
+
+        const autocomplete = new window.google.maps.places.Autocomplete(input, {
+            componentRestrictions: { country: "sg" },
+            fields: ["formatted_address", "geometry"],
+        });
+
+        autocomplete.addListener("place_changed", () => {
+            const place = autocomplete.getPlace();
+            if (!place.geometry) {
+                setQuickError("Invalid address. Please select from dropdown.");
+                return;
+            }
+            setQuickLocation(place.formatted_address);
+            setQuickLat(place.geometry.location.lat());
+            setQuickLng(place.geometry.location.lng());
+            setQuickError("");
+        });
+
+    }, []);
+
+    /*Quick Validation Price for location input*/
+
+    const handleQuickValuation = async () => {
+        setQuickError("");
+        setQuickResult(null);
+
+        if (!quickLocation || !quickArea) {
+            setQuickError("Please enter location and floor area.");
+            return;
+        }
+        if (!quickLat || !quickLng) {
+            setQuickError("Please choose a valid address from Google autocomplete.");
+            return;
+        }
+
+        setQuickLoading(true);
+
+        try {
+            // 1️⃣ GEO ANALYSIS
+            const geoRes = await api.post("/geo/analyze", {
+                latitude: quickLat,
+                longitude: quickLng,
+            });
+            const geo = geoRes.data;
+
+            // 2️⃣ CLEAN PAYLOAD (MUST MATCH Add Property EXACTLY)
+            const payload = {
+                // --- Fields from Form ---
+                size: Number(quickArea), // <-- EDITED: Match 'size' (sqft) field from AddProperties
+                property_type: quickType,
+                tenure: quickTenure,
+                remaining_lease: Number(quickLease) || null, // <-- EDITED: Ensured it's a number
+
+                // --- Fields from Geo ---
+                region: geo.region,
+                latitude: quickLat,
+                longitude: quickLng,
+                nearest_mrt_km: geo.nearest_mrt_km,
+                nearest_mall_km: geo.nearest_mall_km,
+                nearest_school_km: geo.nearest_school_km,
+                nearest_hospital_km: geo.nearest_hospital_km,
+                nearest_park_km: geo.nearest_park_km,
+                nearest_business_km: geo.nearest_business_km, // <-- ADDED: This was missing
+
+                // --- Scores from Geo ---
+                amenity_score: geo.amenity_score,
+                health_score: geo.health_score, // <-- ADDED: This was missing
+                green_score: geo.green_score, // <-- ADDED: This was missing
+                business_access_score: geo.business_access_score, // <-- ADDED: This was missing
+
+                // --- IDs ---
+                property_id: null,
+                user_id: user?.id || null,
+            };
+
+
+            // 4️⃣ QUICK PREDICT
+            const res = await api.post("/predict/current/quick", payload);
+            setQuickResult(res.data);
+
+        } catch (err) {
+            console.error("Quick valuation error:", err);
+            setQuickError("Failed to calculate valuation.");
+        } finally {
+            setQuickLoading(false);
+        }
+    };
+
   return (
     <div className="properties-page">
       <div className="page-header">
@@ -850,36 +964,141 @@ export default function HomebuyerSearch() {
           </div>
         </div>
 
-        <aside className="card saved-card">
-          <div className="card-header">Saved Properties</div>
-          <div className="card-body">
-            {saved.length === 0 ? (
-              <p className="muted-text">Nothing saved yet.</p>
-            ) : (
-              <ul className="saved-list">
-                {saved.map((entry) => (
-                  <li key={entry.id}>
-                    <div className="saved-info">
-                      <Link to={`/properties/${entry.id}`}>{entry.title}</Link>
-                      <div className="muted-text">
-                        ${entry.price} - {entry.bedrooms} BR - {entry.location}
+              <aside className="card saved-card">
+                  <div className="card-header">Saved Properties</div>
+                  <div className="card-body">
+                      {saved.length === 0 ? (
+                          <p className="muted-text">Nothing saved yet.</p>
+                      ) : (
+                          <ul className="saved-list">
+                              {saved.map((entry) => (
+                                  <li key={entry.id}>
+                                      <div className="saved-info">
+                                          <Link to={`/properties/${entry.id}`}>{entry.title}</Link>
+                                          <div className="muted-text">
+                                              ${entry.price} - {entry.bedrooms} BR - {entry.location}
+                                          </div>
+                                      </div>
+                                      <button
+                                          type="button"
+                                          onClick={() => handleRemoveSaved(entry)}
+                                          disabled={savingId === entry.id}
+                                          className="saved-remove"
+                                      >
+                                          {savingId === entry.id ? "Removing..." : "Remove"}
+                                      </button>
+                                  </li>
+                              ))}
+                          </ul>
+                      )}
+                  </div>
+              </aside> {/* <-- Saved Properties card ends here */}
+
+              {/* ⭐ QUICK AI HOME VALUATION (using /predict/current/quick) */}
+              {/* This is now a separate card with margin-top (mt-8) for spacing */}
+              <div className="card mt-8">
+                  <div className="card-header">Quick AI Home Valuation</div>
+                  <div className="card-body p-6">
+                      <div className="grid grid-cols-1 gap-6">
+                          {/* Location */}
+                          <div>
+                              <label className="label">Location</label>
+                              <input
+                                  ref={quickInputRef}
+                                  className="input"
+                                  placeholder="e.g. 10A Segar Road"
+                                  value={quickLocation}
+                                  onChange={(e) => setQuickLocation(e.target.value)}
+                              />
+                          </div>
+
+                          {/* Floor Area (sqft) */}
+                          <div>
+                              <label className="label">Floor Area (sqFT)</label>
+                              <input
+                                  className="input"
+                                  type="number"
+                                  placeholder="e.g. 1020"
+                                  value={quickArea}
+                                  onChange={(e) => setQuickArea(e.target.value)}
+                              />
+                          </div>
+
+                          {/* Property Type */}
+                          <div>
+                              <label className="label">Property Type</label>
+                              <select
+                                  className="input"
+                                  value={quickType}
+                                  onChange={(e) => setQuickType(e.target.value)}
+                              >
+                                  <option value="HDB">HDB</option>
+                                  <option value="Condominium">Condominium</option>
+                                  M       <option value="Landed">Landed</option>
+                              </select>
+                          </div>
+
+                          {/* Tenure */}
+                          <div>
+                              <label className="label">Tenure</label>
+                              <select
+                                  className="input"
+                                  value={quickTenure}
+                                  onChange={(e) => setQuickTenure(e.target.value)}
+                              >
+                                  <option value="99-year Leasehold">99-year Leasehold</option>
+                                  <option value="999-year Leasehold">999-year Leasehold</option>
+                                  <option value="Freehold">Freehold</option>
+                              </select>
+                          </div>
+
+                          {/* Remaining Lease */}
+                          <div>
+                              <label className="label">Remaining Lease (years)</label>
+                              <input
+                                  className="input"
+                                  type="number"
+                                  placeholder="e.g. 74"
+                                  value={quickLease}
+                                  onChange={(e) => setQuickLease(e.target.value)}
+                              />
+                          </div>
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSaved(entry)}
-                      disabled={savingId === entry.id}
-                      className="saved-remove"
-                    >
-                      {savingId === entry.id ? "Removing..." : "Remove"}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+
+                      {/* BUTTON */}
+                      <button
+                          className="btn btn-primary mt-8 w-full"
+                          disabled={quickLoading}
+                          onClick={handleQuickValuation}
+                      >
+                          {quickLoading ? "Estimating..." : "Get Instant Valuation"}
+                      </button>
+
+                      {/* ERRORS */}
+                      {quickError && (
+                          <p className="mt-4 text-red-500">{quickError}</p>
+                      )}
+
+                      {/* RESULTS */}
+                      {quickResult && (
+                          <div className="mt-8 p-6 bg-green-50 border border-green-300 rounded-xl">
+                              <h4 className="text-xl font-bold text-green-700 mb-2">
+                                  Estimated Value: ${quickResult.predicted_total_price.toLocaleString()}
+                              </h4>
+
+                              <p className="text-gray-700">
+                                  Confidence: {quickResult.confidence_low.toLocaleString()} –{" "}
+                                  {quickResult.confidence_high.toLocaleString()}
+                              </p>
+
+                              <p className="text-sm mt-2 text-green-600">
+                                  AI Confidence Score: {quickResult.confidence_score}%
+                              </p>
+                          </div>
+                      )}
+                  </div>
+              </div>
           </div>
-        </aside>
-      </div>
 
       <div className="property-grid mt-24">
         {(items || []).length > 0 ? (
