@@ -12,14 +12,15 @@ export default function UserAnnouncementPopup() {
             try {
                 const res = await api.get("/my/announcements");
                 const list = Array.isArray(res.data) ? res.data : [];
-                const first = list[0] || null; // backend already excludes dismissed
+                const first = list[0] || null;
+
                 if (!cancelled) {
                     setAnnouncement(first);
                     setLoading(false);
                 }
 
-                // Mark as "read" when delivered
                 if (first) {
+                    // mark as read when shown
                     try {
                         await api.post(`/my/announcements/${first.id}/read`);
                     } catch (err) {
@@ -27,13 +28,10 @@ export default function UserAnnouncementPopup() {
                     }
                 }
             } catch (err) {
-                // If not logged in or no auth → just ignore silently
                 if (!cancelled) {
                     setLoading(false);
-                    if (err?.response?.status !== 401 && err?.response?.status !== 403) {
-                        console.error("Failed to load my announcements", err);
-                    }
                 }
+                console.error("Failed to load my announcements", err);
             }
         }
 
@@ -42,6 +40,7 @@ export default function UserAnnouncementPopup() {
             cancelled = true;
         };
     }, []);
+
 
     if (loading || !announcement) return null;
 

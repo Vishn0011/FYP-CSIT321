@@ -3599,66 +3599,7 @@ def list_announcements_admin():
 # User: My announcements
 
 
-@app.get("/api/my/announcements")
-@auth_required
-def my_announcements():
-    """
-    Returns active web announcements targeted at the current user,
-    excluding those they have dismissed.
-    """
-    user = request.user
-    user_id = user["id"]
-    role = str(user.get("role", "")).lower()
-    now = datetime.now(timezone.utc)
 
-    with get_cursor_cm() as cur:
-        cur.execute(
-            """
-            SELECT
-                a.id,
-                a.title,
-                a.body_md,
-                a.priority,
-                a.starts_at,
-                a.ends_at,
-                a.created_at,
-                ua.read_at,
-                ua.dismissed_at
-            FROM announcements a
-            LEFT JOIN announcement_targets t
-              ON t.announcement_id = a.id
-            LEFT JOIN user_announcements ua
-              ON ua.announcement_id = a.id
-             AND ua.user_id = %s
-            WHERE a.channel_web = TRUE
-              AND (a.starts_at IS NULL OR a.starts_at <= %s)
-              AND (a.ends_at   IS NULL OR a.ends_at   >= %s)
-              AND (ua.dismissed_at IS NULL)     -- 👈 don't return dismissed
-              AND (
-                    t.announcement_id IS NULL   -- no targeting row = everyone
-                    OR t.role_in IS NULL        -- or no role filter
-                    OR %s = ANY(t.role_in)      -- or this user's role is included
-                  )
-            ORDER BY a.priority DESC,
-                     a.starts_at DESC NULLS LAST,
-                     a.created_at DESC
-            """,
-            [user_id, now, now, role],
-        )
-        rows = cur.fetchall()
-
-        # Mark delivered
-        for r in rows:
-            cur.execute(
-                """
-                INSERT INTO user_announcements (announcement_id, user_id, delivered_at)
-                VALUES (%s, %s, now())
-                ON CONFLICT (announcement_id, user_id) DO NOTHING
-                """,
-                [r["id"], user_id],
-            )
-
-    return jsonify(rows)
 
 
 @app.post("/api/my/announcements/<int:ann_id>/read")
@@ -3694,6 +3635,80 @@ def dismiss_announcement(ann_id):
         )
     return jsonify({"ok": True})
 
+
+from datetime import datetime, timezone
+
+@app.get("/api/my/announcements")
+@auth_required
+def my_announcements():
+    """
+    Returns active web announcements targeted at the current user,
+    excluding ones they've dismissed.
+    Also ensures a user_announcements row exists (delivered_at) for each.
+    """
+    user = request.user
+    user_id = user["id"]
+    role = str(user.get("role", "")).lower()
+    now = datetime.now(timezone.utc)
+
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            SELECT
+                a.id,
+                a.title,
+                a.body_md,
+                a.priority,
+                a.starts_at,
+                a.ends_at,
+                a.created_at,
+                ua.read_at,
+                ua.dismissed_at
+            FROM announcements a
+            LEFT JOIN announcement_targets t
+              ON t.announcement_id = a.id
+            LEFT JOIN user_announcements ua
+              ON ua.announcement_id = a.id
+             AND ua.user_id = %s
+            WHERE a.channel_web = TRUE
+              AND (a.starts_at IS NULL OR a.starts_at <= %s)
+              AND (a.ends_at   IS NULL OR a.ends_at   >= %s)
+              AND (ua.dismissed_at IS NULL)        -- don't return dismissed ones
+              AND (
+                    t.announcement_id IS NULL      -- everyone
+                    OR t.role_in IS NULL           -- no role filter
+                    OR %s = ANY(t.role_in)         -- this role targeted
+                  )
+            ORDER BY a.created_at DESC
+            """,
+            [user_id, now, now, role],
+        )
+        rows = cur.fetchall()
+
+        # ensure delivered_at row exists per announcement/user
+        for r in rows:
+            cur.execute(
+                """
+                INSERT INTO user_announcements (announcement_id, user_id, delivered_at)
+                VALUES (%s, %s, now())
+                ON CONFLICT (announcement_id, user_id) DO NOTHING
+                """,
+                [r["id"], user_id],
+            )
+
+    # Standardised object so we can reuse on frontend as "notifications"
+    payload = [
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "body_md": r["body_md"],
+            "created_at": r["created_at"],
+            "read_at": r["read_at"],
+            "dismissed_at": r["dismissed_at"],
+        }
+        for r in rows
+    ]
+    return jsonify(payload)
 
 
 

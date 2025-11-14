@@ -1,6 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import ThemeToggle from "./ThemeToggle";
+import NotificationsBell from "./NotificationsBell";
+
 
 export default function Nav() {
   const { user, logout } = useAuth();
@@ -41,6 +43,7 @@ export default function Nav() {
             </Link>
           </>
         ) : null}
+{user && <NotificationsBell />}
 
         {/* Right side: theme toggle + auth actions */}
         <div className="ml-6 flex items-center gap-3">
