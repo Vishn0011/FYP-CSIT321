@@ -507,9 +507,9 @@ export default function AdminDashboard() {
                             <ManageFeatures />
                         </Section>
 
-                        {/* Payment Page Settings */}
+                        {/* Subscribe Page Settings */}
                         <Section
-                            title="Payment Page Settings"
+                            title="Subscribe Page Settings"
                             onViewAll={() => {}}
                         >
                             <ManagePaymentPage />
@@ -790,17 +790,17 @@ function ManagePaymentPage() {
                 subtitle: d.subtitle || form.subtitle,
                 disclaimer: d.disclaimer || form.disclaimer,
             });
-            setStatus("Payment page saved successfully.");
+            setStatus("Subscribe page saved successfully.");
         } catch (err) {
-            console.error("Failed to save payment page:", err);
-            setStatus("Failed to save payment page.");
+            console.error("Failed to save Subscribe page:", err);
+            setStatus("Failed to save Subscribe page.");
         } finally {
             setSaving(false);
         }
     }
 
     if (loading) {
-        return <p className="text-sm text-gray-500">Loading payment page…</p>;
+        return <p className="text-sm text-gray-500">Loading Subscribe page…</p>;
     }
 
     return (
@@ -858,7 +858,7 @@ function ManagePaymentPage() {
                 disabled={saving}
                 className="inline-flex items-center px-4 py-2 rounded-md bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
             >
-                {saving ? "Saving…" : "Save Payment Page"}
+                {saving ? "Saving…" : "Save Subscribe Page"}
             </button>
         </form>
     );
