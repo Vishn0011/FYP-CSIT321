@@ -131,7 +131,7 @@ export default function Subscribe() {
         setError("Please sign in again to continue.");
         navigate("/login", {
           replace: true,
-          state: { redirectTo: "/payment" },
+          state: { redirectTo: "/subscribe" },
         });
         return;
       }
