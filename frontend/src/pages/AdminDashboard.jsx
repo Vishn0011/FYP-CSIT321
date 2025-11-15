@@ -506,6 +506,23 @@ export default function AdminDashboard() {
                         >
                             <ManageFeatures />
                         </Section>
+
+                        {/* Payment Page Settings */}
+                        <Section
+                            title="Payment Page Settings"
+                            onViewAll={() => {}}
+                        >
+                            <ManagePaymentPage />
+                        </Section>
+
+                        {/* Subscription Plans */}
+                        <Section
+                            title="Subscription Plans"
+                            onViewAll={() => {}}
+                        >
+                            <ManagePlans />
+                        </Section>
+
                         {/* Pending Agent Approvals */}
                         <Section title="Pending Agent Approvals">
                             {pendingUsers.length === 0 ? (
@@ -706,6 +723,335 @@ function ManageDropdowns() {
                                         {opt.status === "active"
                                             ? "Disable"
                                             : "Enable"}
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+        </div>
+    );
+}
+
+/* Manage Payment Page Component */
+function ManagePaymentPage() {
+    const [form, setForm] = useState({
+        title: "",
+        subtitle: "",
+        disclaimer: "",
+    });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [status, setStatus] = useState("");
+
+    // 1) Load current values from DB when component mounts
+    useEffect(() => {
+        const fetchPage = async () => {
+            try {
+                setStatus("");
+                const res = await api.get("/api/admin/payment-page");
+                const d = res.data || {};
+                setForm({
+                    title: d.title || "",
+                    subtitle: d.subtitle || "",
+                    disclaimer: d.disclaimer || "",
+                });
+            } catch (err) {
+                console.error("Failed to fetch payment page:", err);
+                setStatus("Failed to load current payment page.");
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchPage();
+    }, []);
+
+    function handleChange(e) {
+        const { name, value } = e.target;
+        setForm((f) => ({ ...f, [name]: value }));
+    }
+
+    // 2) Save changes (this will update the DB via your PUT endpoint)
+    async function handleSave(e) {
+        e.preventDefault();
+        setSaving(true);
+        setStatus("");
+        try {
+            const res = await api.put("/api/admin/payment-page", {
+                title: form.title,
+                subtitle: form.subtitle,
+                disclaimer: form.disclaimer,
+            });
+            // Optional: re-sync with whatever DB actually stored
+            const d = res.data || {};
+            setForm({
+                title: d.title || form.title,
+                subtitle: d.subtitle || form.subtitle,
+                disclaimer: d.disclaimer || form.disclaimer,
+            });
+            setStatus("Payment page saved successfully.");
+        } catch (err) {
+            console.error("Failed to save payment page:", err);
+            setStatus("Failed to save payment page.");
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    if (loading) {
+        return <p className="text-sm text-gray-500">Loading payment page…</p>;
+    }
+
+    return (
+        <form onSubmit={handleSave} className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Title
+                </label>
+                <input
+                    type="text"
+                    name="title"
+                    value={form.title}
+                    onChange={handleChange}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    placeholder="Complete Subscription"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Subtitle
+                </label>
+                <input
+                    type="text"
+                    name="subtitle"
+                    value={form.subtitle}
+                    onChange={handleChange}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    placeholder="Choose a plan to continue"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Disclaimer
+                </label>
+                <textarea
+                    name="disclaimer"
+                    value={form.disclaimer}
+                    onChange={handleChange}
+                    rows={3}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    placeholder="All payments are processed by Stripe in test mode."
+                />
+            </div>
+
+            {status && (
+                <p className="text-sm mt-1 text-gray-600">
+                    {status}
+                </p>
+            )}
+
+            <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex items-center px-4 py-2 rounded-md bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
+            >
+                {saving ? "Saving…" : "Save Payment Page"}
+            </button>
+        </form>
+    );
+}
+
+/* Manage Plans Component */
+function ManagePlans() {
+    const [plans, setPlans] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [status, setStatus] = useState("");
+
+    useEffect(() => {
+        fetchPlans();
+    }, []);
+
+    const fetchPlans = async () => {
+        try {
+            setStatus("");
+            // ✅ use the new admin endpoint
+            const res = await api.get("/api/admin/plans");
+            const list = Array.isArray(res.data) ? res.data : [];
+            setPlans(list);
+        } catch (err) {
+            console.error("Failed to fetch plans:", err);
+            setStatus("Failed to load plans.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const addPlan = async () => {
+        const handle = prompt("Plan handle (e.g. PRO_MONTHLY):");
+        if (!handle) return;
+        const name = prompt("Display name (e.g. Pro Monthly):");
+        if (!name) return;
+        const description = prompt("Description (optional):") || null;
+        const unitAmountStr = prompt(
+            "Unit amount in cents (e.g. 9900 for $99.00):"
+        );
+        if (!unitAmountStr) return;
+        const interval = prompt("Billing interval (month/year):", "month");
+        if (!interval) return;
+        const stripePriceId = prompt("Stripe price ID (e.g. price_123):");
+        if (!stripePriceId) return;
+        const currency = "sgd";
+
+        try {
+            const body = {
+                handle,
+                name,
+                description,
+                currency,
+                unit_amount: parseInt(unitAmountStr, 10),
+                interval,
+                stripe_price_id: stripePriceId,
+                is_active: true,
+            };
+            const res = await api.post("/api/admin/plans", body);
+            setPlans((prev) => [...prev, res.data]);
+            setStatus("Plan created.");
+        } catch (err) {
+            console.error("Failed to create plan:", err);
+            setStatus("Failed to create plan.");
+        }
+    };
+
+    const toggleActive = async (plan) => {
+        try {
+            const res = await api.patch(`/api/admin/plans/${plan.id}`, {
+                is_active: !plan.is_active,
+            });
+            setPlans((prev) =>
+                prev.map((p) => (p.id === plan.id ? res.data : p))
+            );
+            setStatus("Plan updated.");
+        } catch (err) {
+            console.error("Failed to update plan:", err);
+            setStatus("Failed to update plan.");
+        }
+    };
+
+    const editPrice = async (plan) => {
+        const current = plan.unit_amount || 0;
+        const next = prompt(
+            `New unit amount in cents for ${plan.handle} (current: ${current}):`,
+            String(current)
+        );
+        if (!next) return;
+        const value = parseInt(next, 10);
+        if (Number.isNaN(value)) return alert("Invalid amount.");
+
+        try {
+            const res = await api.patch(`/api/admin/plans/${plan.id}`, {
+                unit_amount: value,
+            });
+            setPlans((prev) =>
+                prev.map((p) => (p.id === plan.id ? res.data : p))
+            );
+            setStatus("Price updated.");
+        } catch (err) {
+            console.error("Failed to update price:", err);
+            setStatus("Failed to update price.");
+        }
+    };
+
+    if (loading) {
+        return <p className="text-sm text-gray-500">Loading plans…</p>;
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                    Configure subscription plans linked to Stripe.
+                </p>
+                <button
+                    onClick={addPlan}
+                    className="bg-emerald-600 text-white px-3 py-1 rounded text-sm hover:bg-emerald-700"
+                >
+                    ➕ Add Plan
+                </button>
+            </div>
+
+            {status && (
+                <p className="text-sm text-gray-600">
+                    {status}
+                </p>
+            )}
+
+            {plans.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                    No plans configured yet.
+                </p>
+            ) : (
+                <table className="w-full text-left border rounded">
+                    <thead className="bg-gray-50 border-b">
+                        <tr>
+                            <th className="p-2 text-gray-600 font-semibold">
+                                Handle
+                            </th>
+                            <th className="p-2 text-gray-600 font-semibold">
+                                Name
+                            </th>
+                            <th className="p-2 text-gray-600 font-semibold">
+                                Amount (cents)
+                            </th>
+                            <th className="p-2 text-gray-600 font-semibold">
+                                Interval
+                            </th>
+                            <th className="p-2 text-gray-600 font-semibold">
+                                Active
+                            </th>
+                            <th className="p-2 text-gray-600 font-semibold">
+                                Actions
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {plans.map((plan) => (
+                            <tr key={plan.id} className="border-b">
+                                <td className="p-2 text-xs font-mono">
+                                    {plan.handle}
+                                </td>
+                                <td className="p-2 text-sm">{plan.name}</td>
+                                <td className="p-2 text-sm">
+                                    {plan.unit_amount}
+                                </td>
+                                <td className="p-2 text-sm">
+                                    {plan.interval}
+                                </td>
+                                <td className="p-2">
+                                    <span
+                                        className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                            plan.is_active
+                                                ? "bg-green-100 text-green-700"
+                                                : "bg-red-100 text-red-700"
+                                        }`}
+                                    >
+                                        {plan.is_active ? "Active" : "Inactive"}
+                                    </span>
+                                </td>
+                                <td className="p-2 space-x-2">
+                                    <button
+                                        onClick={() => toggleActive(plan)}
+                                        className="text-sm text-blue-600 hover:underline"
+                                    >
+                                        {plan.is_active ? "Disable" : "Enable"}
+                                    </button>
+                                    <button
+                                        onClick={() => editPrice(plan)}
+                                        className="text-sm text-indigo-600 hover:underline"
+                                    >
+                                        Edit Price
                                     </button>
                                 </td>
                             </tr>

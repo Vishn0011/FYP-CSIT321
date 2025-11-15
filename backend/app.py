@@ -3685,6 +3685,7 @@ def analyze_geo():
 
 
 # --- Payment page ---
+ACTIVE_STATUSES = ("trialing", "active", "past_due", "unpaid")
 # --- Payment page content (public)---
 @app.get("/api/public/payment-page")
 def get_payment_page_public():
@@ -3747,6 +3748,33 @@ def update_payment_page_admin():
         row = cur.fetchone()
     return jsonify(row)
 
+@app.get("/api/admin/payment-page")
+@auth_required
+def get_payment_page_admin():
+    if not _require_admin():
+        return jsonify({"error": "admin only"}), 403
+
+    with get_cursor_cm() as cur:
+        cur.execute("""
+            SELECT id, title, subtitle, disclaimer, updated_at
+            FROM payment_pages
+            ORDER BY id
+            LIMIT 1;
+        """)
+        row = cur.fetchone()
+
+    # If table is empty, return defaults (matching your table definition)
+    if not row:
+        return jsonify({
+            "id": None,
+            "title": "Complete Subscription",
+            "subtitle": "Choose a plan to continue",
+            "disclaimer": "All payments are processed by Stripe in test mode.",
+            "updated_at": None,
+        })
+
+    return jsonify(row)
+
 @app.post("/api/admin/plans")
 @auth_required
 def create_plan_admin():
@@ -3784,10 +3812,30 @@ def update_plan_admin(pid):
         return jsonify({"error":"not found"}), 404
     return jsonify(row)
 
+@app.get("/api/admin/plans")
+@auth_required
+def list_plans_admin():
+    if not _require_admin():
+        return jsonify({"error": "admin only"}), 403
 
+    with get_cursor_cm() as cur:
+        cur.execute("""
+            SELECT
+                id,
+                handle,
+                name,
+                description,
+                currency,
+                unit_amount,
+                interval,
+                stripe_price_id,
+                is_active
+            FROM plans
+            ORDER BY id;
+        """)
+        rows = cur.fetchall() or []
 
-
-
+    return jsonify(rows)
 
 # Admin: Announcements CRUD
 
@@ -4015,25 +4063,46 @@ def payments_checkout():
         body = request.get_json(force=True) or {}
         plan_id = body.get("plan_id")
 
-        # --- diagnostics ---
-        print("[checkout] start", flush=True)
-        print("[checkout] user", request.user, flush=True)
         print("[checkout] body", body, flush=True)
-        print("[checkout] stripe_key_prefix", (stripe.api_key or "")[:8], flush=True)
         print("[checkout] FRONTEND_URL", FRONTEND_URL, flush=True)
 
         # 1) validate inputs/config
         if not isinstance(plan_id, int):
-            return jsonify({"error":"invalid_plan","detail":"plan_id must be integer"}), 400
-        if not stripe.api_key or not stripe.api_key.startswith(("sk_test_","sk_live_")):
-            return jsonify({"error":"stripe_config","detail":"STRIPE_SECRET_KEY missing/invalid"}), 500
-        if not FRONTEND_URL.startswith(("http://","https://")):
-            return jsonify({"error":"frontend_url","detail":f"bad FRONTEND_URL: {FRONTEND_URL}"}), 500
+            return jsonify({"error": "invalid_plan", "detail": "plan_id must be integer"}), 400
+        if not stripe.api_key or not stripe.api_key.startswith(("sk_test_", "sk_live_")):
+            return jsonify({"error": "stripe_config", "detail": "STRIPE_SECRET_KEY missing/invalid"}), 500
+        if not FRONTEND_URL.startswith(("http://", "https://")):
+            return jsonify({"error": "frontend_url", "detail": f"bad FRONTEND_URL: {FRONTEND_URL}"}), 500
 
         # 2) current signed-in user (set by @auth_required)
         user_id = request.user["id"]
-        email   = request.user["email"]
-        role    = (request.user.get("role") or "homeowner").lower()
+        email = request.user["email"]
+        role = (request.user.get("role") or "homeowner").lower()
+
+        # 🔒 2.5) BLOCK if user already has an active subscription
+        with get_cursor_cm() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM subscriptions
+                WHERE user_id = %s
+                  AND stripe_status = ANY(%s)
+                LIMIT 1
+                """,
+                [user_id, list(ACTIVE_STATUSES)],
+            )
+            existing = cur.fetchone()
+
+        if existing:
+            return (
+                jsonify(
+                    {
+                        "error": "has_active_subscription",
+                        "detail": "You already have an active subscription. Please cancel it before subscribing to a new plan.",
+                    }
+                ),
+                400,
+            )
 
         # 3) ensure stripe customer id
         with get_cursor_cm() as cur:
@@ -4041,35 +4110,51 @@ def payments_checkout():
             row = cur.fetchone()
             stripe_customer_id = row["stripe_customer_id"] if row else None
         if not stripe_customer_id:
-            cust = stripe.Customer.create(email=email, metadata={"app_user_id": str(user_id), "role": role})
+            cust = stripe.Customer.create(
+                email=email, metadata={"app_user_id": str(user_id), "role": role}
+            )
             with get_cursor_cm() as cur:
-                cur.execute("UPDATE users SET stripe_customer_id=%s WHERE id=%s", [cust.id, user_id])
+                cur.execute(
+                    "UPDATE users SET stripe_customer_id=%s WHERE id=%s",
+                    [cust.id, user_id],
+                )
             stripe_customer_id = cust.id
         print("[checkout] customer", stripe_customer_id, flush=True)
 
         # 4) fetch plan
         with get_cursor_cm() as cur:
-            cur.execute("SELECT id, stripe_price_id, is_active FROM plans WHERE id=%s", [plan_id])
+            cur.execute(
+                "SELECT id, stripe_price_id, is_active FROM plans WHERE id=%s", [plan_id]
+            )
             plan = cur.fetchone()
         print("[checkout] plan", plan, flush=True)
 
         if not plan:
-            return jsonify({"error":"plan_not_found","detail":f"id={plan_id}"}), 404
+            return jsonify({"error": "plan_not_found", "detail": f"id={plan_id}"}), 404
         if not plan["is_active"]:
-            return jsonify({"error":"plan_inactive","detail":f"id={plan_id}"}), 400
-        if not plan["stripe_price_id"] or not plan["stripe_price_id"].startswith("price_"):
-            return jsonify({"error":"bad_price_id","detail":"missing/invalid stripe_price_id"}), 400
+            return jsonify({"error": "plan_inactive", "detail": f"id={plan_id}"}), 400
+        if not plan["stripe_price_id"] or not plan["stripe_price_id"].startswith(
+            "price_"
+        ):
+            return jsonify(
+                {
+                    "error": "bad_price_id",
+                    "detail": "missing/invalid stripe_price_id",
+                }
+            ), 400
 
         # 5) proactively verify the price exists in this Stripe mode
         try:
             _ = stripe.Price.retrieve(plan["stripe_price_id"])
         except stripe.error.InvalidRequestError as e:
-            print("[checkout] price INVALID:", plan["stripe_price_id"], str(e), flush=True)
-            return jsonify({"error":"bad_price_id","detail":str(e)}), 400
+            print(
+                "[checkout] price INVALID:", plan["stripe_price_id"], str(e), flush=True
+            )
+            return jsonify({"error": "bad_price_id", "detail": str(e)}), 400
 
         # 6) create checkout session
         success_url = f"{FRONTEND_URL}/payment/success?role={role}&session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url  = f"{FRONTEND_URL}/payment/cancel"
+        cancel_url = f"{FRONTEND_URL}/payment/cancel"
 
         session = stripe.checkout.Session.create(
             mode="subscription",
@@ -4083,6 +4168,7 @@ def payments_checkout():
         print("[checkout] session", session.id, flush=True)
         return jsonify({"checkout_url": session.url})
 
+
     # --- targeted error mapping (always JSON) ---
     except stripe.error.AuthenticationError as e:
         return jsonify({"error":"stripe_auth","detail":str(e)}), 500
@@ -4095,6 +4181,128 @@ def payments_checkout():
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"error":"unexpected","detail":str(e)}), 500
+    
+@app.get("/api/subscriptions/me")
+@auth_required
+def my_subscription():
+    """
+    Return the current active subscription (if any) for the logged-in user.
+    """
+    user_id = request.user["id"]
+
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            SELECT
+                s.id,
+                s.stripe_subscription_id,
+                s.stripe_status,
+                s.started_at,
+                s.current_period_end,
+                p.id            AS plan_id,
+                p.name          AS plan_name,
+                p.description   AS plan_description,
+                p.currency,
+                p.unit_amount,
+                p."interval"
+            FROM subscriptions s
+            LEFT JOIN plans p ON p.id = s.plan_id
+            WHERE s.user_id = %s
+              AND s.stripe_status = ANY(%s)
+            ORDER BY s.started_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            [user_id, list(ACTIVE_STATUSES)],
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return jsonify({"active": False, "subscription": None})
+
+    # Optional: convert to plain dict for React
+    sub = dict(row)
+    return jsonify({"active": True, "subscription": sub})
+
+@app.post("/api/subscriptions/cancel")
+@auth_required
+def cancel_my_subscription():
+    """
+    Cancel the user's current active subscription in Stripe AND update our DB.
+    """
+    user_id = request.user["id"]
+
+    # 1) Find the active subscription row
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            SELECT stripe_subscription_id
+            FROM subscriptions
+            WHERE user_id = %s
+              AND stripe_status = ANY(%s)
+            ORDER BY started_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            [user_id, list(ACTIVE_STATUSES)],
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return jsonify({"error": "no_active_subscription"}), 400
+
+    sub_id = row["stripe_subscription_id"]
+
+    # 2) Cancel in Stripe (immediate)
+    try:
+        canceled = stripe.Subscription.delete(sub_id)
+    except stripe.error.StripeError as e:
+        return jsonify({"error": "stripe_cancel_failed", "detail": str(e)}), 500
+
+    # 3) Update our DB with new status
+    status = getattr(canceled, "status", "canceled")
+    current_period_end = getattr(canceled, "current_period_end", None)
+
+    with get_cursor_cm() as cur:
+        cur.execute(
+            """
+            UPDATE subscriptions
+            SET stripe_status = %s,
+                current_period_end = COALESCE(to_timestamp(%s), current_period_end)
+            WHERE stripe_subscription_id = %s
+            """,
+            [status, current_period_end, sub_id],
+        )
+     # 4) OPTIONAL: Remove saved payment methods from the Stripe customer
+    try:
+        # Look up the Stripe customer for this user
+        with get_cursor_cm() as cur:
+            cur.execute(
+                "SELECT stripe_customer_id FROM users WHERE id = %s",
+                [user_id],
+            )
+            user_row = cur.fetchone()
+
+        stripe_customer_id = user_row["stripe_customer_id"] if user_row else None
+
+        if stripe_customer_id:
+            # Clear default payment method
+            stripe.Customer.modify(
+                stripe_customer_id,
+                invoice_settings={"default_payment_method": None},
+            )
+
+            # Detach all card payment methods attached to this customer
+            payment_methods = stripe.PaymentMethod.list(
+                customer=stripe_customer_id,
+                type="card",
+            )
+
+            for pm in payment_methods["data"]:
+                stripe.PaymentMethod.detach(pm["id"])
+
+    except stripe.error.StripeError as e:
+        print("Failed to detach payment methods:", str(e), flush=True)
+
+    return jsonify({"ok": True, "status": status})
 
 # --- Webhook for Stripe persistent subscription status ---
 @app.post("/api/webhooks/stripe")
