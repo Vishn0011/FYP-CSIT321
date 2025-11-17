@@ -569,8 +569,6 @@ def google_signup():
         return jsonify({"error": str(e)}), 500
 
 
-
-
 # --- Who am I (protected) ---
 @app.get("/me")
 @auth_required
@@ -1088,9 +1086,9 @@ def list_properties():
         SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
                size, location, latitude, longitude, photos, status,
                furnishing, floor_level, tenure, amenities, floor_plan, video_url,
-               created_at, updated_at
+               created_at, updated_at, is_deleted
         FROM properties
-        WHERE 1=1
+        WHERE 1=1 AND is_deleted = false
     """
     params = []
 
@@ -1437,6 +1435,38 @@ def update_property(prop_id):
     else:
         geo_cluster = None
 
+    # === NEW FIX: Ensure property_type_final is always valid ===
+    property_type_raw = (data.get("property_type") or "").strip().lower()
+    property_type_final = data.get("property_type_final")
+
+    # Simple normalizer (no external utils needed)
+    def normalize_property_type(value: str):
+        v = value.lower().strip()
+
+        if "hdb" in v:
+            return "HDB"
+        if "condo" in v or "condominium" in v:
+            return "Condominium"
+        if "ec" in v:
+            return "EC"
+        if "apartment" in v:
+            return "Apartment"
+        if "landed" in v:
+            return "Landed"
+        return value.title() if value else None
+
+    # If missing or empty, normalize using raw property_type
+    if not property_type_final:
+        property_type_final = normalize_property_type(property_type_raw)
+
+    # Force HDB if original property_type is HDB (safety)
+    if property_type_raw == "hdb":
+        property_type_final = "HDB"
+
+    # Save back to data dict
+    data["property_type_final"] = property_type_final
+
+
     # === 6️⃣ Prepare SQL update ===
     sql = """
         UPDATE properties
@@ -1504,7 +1534,7 @@ def update_property(prop_id):
         data.get("floor_plan"),
         data.get("video_url"),
         data.get("region"),
-        data.get("property_type_final"),
+        property_type_final,
         floor_area_sqm,
         remaining_lease,
         data.get("nearest_mrt_km"),
@@ -4057,16 +4087,18 @@ def my_announcements():
 
 # --- Stripe (payment service) checkout ---
 @app.post("/api/payments/checkout")
-@auth_required
 def payments_checkout():
     try:
         body = request.get_json(force=True) or {}
         plan_id = body.get("plan_id")
-
         print("[checkout] body", body, flush=True)
         print("[checkout] FRONTEND_URL", FRONTEND_URL, flush=True)
+        fallback_email = body.get("email")  # <-- ALLOW public checkout
+        
+        print("[checkout] start", flush=True)
+        print("[checkout] body", body, flush=True)
 
-        # 1) validate inputs/config
+        # --- 1) Validate plan_id ---
         if not isinstance(plan_id, int):
             return jsonify({"error": "invalid_plan", "detail": "plan_id must be integer"}), 400
         if not stripe.api_key or not stripe.api_key.startswith(("sk_test_", "sk_live_")):
@@ -4118,7 +4150,58 @@ def payments_checkout():
                     "UPDATE users SET stripe_customer_id=%s WHERE id=%s",
                     [cust.id, user_id],
                 )
+            return jsonify({"error":"invalid_plan", "detail":"plan_id must be integer"}), 400
+
+        # --- 2) Detect authenticated user (optional) ---
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.replace("Bearer ", "").strip() if auth_header else None
+
+        user_id = None
+        email = None
+        role = "homeowner"
+
+        # If token exists, try to authenticate user
+        if token:
+            u = get_user_from_token(token)
+            if u:
+                user_id = u["id"]
+                email = u["email"]
+                role = u.get("role", "homeowner").lower()
+
+        # --- 3) If NOT authenticated, require email ---
+        if not email:
+            if not fallback_email:
+                return jsonify({"error": "missing_email"}), 400
+            email = fallback_email.lower()
+            role = "homeowner"  # default for signup
+
+        print("[checkout] Effective email:", email, flush=True)
+        print("[checkout] Effective user_id:", user_id, flush=True)
+
+        # --- 4) Ensure Stripe customer exists ---
+        stripe_customer_id = None
+        if user_id:
+            with get_cursor() as cur:
+                cur.execute("SELECT stripe_customer_id FROM users WHERE id=%s", [user_id])
+                row = cur.fetchone()
+                if row:
+                    stripe_customer_id = row["stripe_customer_id"]
+
+        if not stripe_customer_id:
+            cust = stripe.Customer.create(
+                email=email,
+                metadata={
+                    "role": role,
+                    "user_id": str(user_id or "")
+                }
+            )
+
+            if user_id:
+                with get_cursor() as cur:
+                    cur.execute("UPDATE users SET stripe_customer_id=%s WHERE id=%s", [cust.id, user_id])
+
             stripe_customer_id = cust.id
+
         print("[checkout] customer", stripe_customer_id, flush=True)
 
         # 4) fetch plan
@@ -4126,8 +4209,10 @@ def payments_checkout():
             cur.execute(
                 "SELECT id, stripe_price_id, is_active FROM plans WHERE id=%s", [plan_id]
             )
+        # --- 5) Fetch plan info ---
+        with get_cursor() as cur:
+            cur.execute("SELECT id, stripe_price_id, is_active FROM plans WHERE id=%s", [plan_id])
             plan = cur.fetchone()
-        print("[checkout] plan", plan, flush=True)
 
         if not plan:
             return jsonify({"error": "plan_not_found", "detail": f"id={plan_id}"}), 404
@@ -4153,6 +4238,13 @@ def payments_checkout():
             return jsonify({"error": "bad_price_id", "detail": str(e)}), 400
 
         # 6) create checkout session
+            return jsonify({"error":"plan_not_found"}), 404
+        if not plan["is_active"]:
+            return jsonify({"error":"plan_inactive"}), 400
+        if not plan["stripe_price_id"].startswith("price_"):
+            return jsonify({"error":"bad_price_id"}), 400
+
+        # --- 6) Create checkout session ---
         success_url = f"{FRONTEND_URL}/payment/success?role={role}&session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{FRONTEND_URL}/payment/cancel"
 
@@ -4163,9 +4255,14 @@ def payments_checkout():
             line_items=[{"price": plan["stripe_price_id"], "quantity": 1}],
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata={"user_id": str(user_id), "plan_id": str(plan["id"]), "role": role},
+            metadata={
+                "user_id": str(user_id or ""),
+                "plan_id": str(plan["id"]),
+                "email": email,
+                "role": role,
+            }
         )
-        print("[checkout] session", session.id, flush=True)
+
         return jsonify({"checkout_url": session.url})
 
 
@@ -4303,6 +4400,7 @@ def cancel_my_subscription():
         print("Failed to detach payment methods:", str(e), flush=True)
 
     return jsonify({"ok": True, "status": status})
+
 
 # --- Webhook for Stripe persistent subscription status ---
 @app.post("/api/webhooks/stripe")

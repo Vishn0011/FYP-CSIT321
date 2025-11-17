@@ -46,7 +46,6 @@ export default function EditProperty() {
     }, []);
 
     // === Load existing property data ===
-    // === Load existing property data ===
     useEffect(() => {
         api.get(`/properties/${id}`)
             .then((res) => {
@@ -83,14 +82,16 @@ export default function EditProperty() {
     }, [id]);
 
 
-    // === Google Maps setup ===
+    // === GOOGLE MAPS + AUTOCOMPLETE + GEO ANALYSIS ===
     useEffect(() => {
-        if (currentStep !== 2 || !form) return;
+        if (currentStep !== 2) return;
+        if (!form) return;
         if (!window.google) return;
 
         const mapEl = document.getElementById("map");
         if (!mapEl) return;
 
+        // ===== INITIAL MAP LOAD WITH EXISTING COORDINATES =====
         mapRef.current = new window.google.maps.Map(mapEl, {
             center: { lat: form.latitude || 1.3521, lng: form.longitude || 103.8198 },
             zoom: 16,
@@ -101,17 +102,20 @@ export default function EditProperty() {
             map: mapRef.current,
         });
 
+        // === AUTOCOMPLETE FOR ADDRESS SEARCH ===
         const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
             componentRestrictions: { country: "sg" },
             fields: ["formatted_address", "geometry"],
         });
 
-        const onPlaceChanged = () => {
+        const onPlaceChanged = async () => {
             const place = autocomplete.getPlace();
             if (!place?.geometry) return;
+
             const lat = place.geometry.location.lat();
             const lng = place.geometry.location.lng();
 
+            // Update form location + coords
             setForm((prev) => ({
                 ...prev,
                 location: place.formatted_address,
@@ -119,13 +123,65 @@ export default function EditProperty() {
                 longitude: lng,
             }));
 
+            // Move map + marker
             mapRef.current.setCenter({ lat, lng });
             markerRef.current.setPosition({ lat, lng });
+
+            // ==========================
+            // RUN GEO / AMENITY ANALYSIS
+            // ==========================
+            try {
+                const res = await api.post("/geo/analyze", {
+                    latitude: lat,
+                    longitude: lng,
+                });
+
+                const data = res.data;
+
+                setForm((prev) => ({
+                    ...prev,
+                    ...data, // auto-fill all distances + names + scores
+                }));
+
+                Swal.fire({
+                    title: "📍 Location Re-Analysed",
+                    html: `
+                        <div style="text-align:left; font-size:14px;">
+                            <p><b>Nearest MRT:</b> ${data.nearest_mrt_name || "—"} (${data.nearest_mrt_km ?? "—"} km)</p>
+                            <p><b>Nearest Mall:</b> ${data.nearest_mall_name || "—"} (${data.nearest_mall_km ?? "—"} km)</p>
+                            <p><b>Nearest School:</b> ${data.nearest_school_name || "—"} (${data.nearest_school_km ?? "—"} km)</p>
+                            <p><b>Nearest Hospital:</b> ${data.nearest_hospital_name || "—"} (${data.nearest_hospital_km ?? "—"} km)</p>
+                            <p><b>Nearest Park:</b> ${data.nearest_park_name || "—"} (${data.nearest_park_km ?? "—"} km)</p>
+                            <p><b>Nearest Business Hub:</b> ${data.nearest_business_name || "—"} (${data.nearest_business_km ?? "—"} km)</p>
+                            <hr/>
+                            <p><b>Amenity Score:</b> ${data.amenity_score}/10</p>
+                            <p><b>Health Score:</b> ${data.health_score}/10</p>
+                            <p><b>Green Score:</b> ${data.green_score}/10</p>
+                            <p><b>Business Access Score:</b> ${data.business_access_score}/10</p>
+                        </div>
+                    `,
+                    confirmButtonColor: "#10B981",
+                });
+            } catch (err) {
+                console.error("Geo Analysis Error:", err);
+                Swal.fire({
+                    icon: "error",
+                    title: "⚠️ Failed to analyze new location",
+                    text: err.response?.data?.error || "Please try again later.",
+                });
+            }
         };
 
         autocomplete.addListener("place_changed", onPlaceChanged);
-        return () => window.google.maps.event.clearInstanceListeners(autocomplete);
+
+        // Cleanup listeners
+        return () => {
+            if (autocomplete) {
+                window.google.maps.event.clearInstanceListeners(autocomplete);
+            }
+        };
     }, [currentStep, form]);
+
 
     // === Convert uploaded images to base64 ===
     const handlePhotoUpload = async (e) => {
@@ -173,63 +229,127 @@ export default function EditProperty() {
         e.preventDefault();
 
         const result = await Swal.fire({
-            title: "Confirm Save?",
-            text: "Do you want to update this property and re-run AI prediction?",
+            title: "Confirm Update?",
+            text: "Do you want to save this property and re-run AI price analysis?",
             icon: "question",
             showCancelButton: true,
             confirmButtonColor: "#10B981",
             cancelButtonColor: "#6B7280",
-            confirmButtonText: "Yes, save and analyze",
+            confirmButtonText: "Yes, update & analyze",
         });
 
         if (!result.isConfirmed) return;
 
         try {
-            // --- Step 1️⃣: Update property in database ---
+            // -----------------------------
+            // 1️⃣ UPDATE PROPERTY IN DATABASE
+            // -----------------------------
             const payload = {
                 ...form,
                 photos: JSON.stringify(form.photos),
             };
 
             const res = await api.patch(`/properties/edit/${id}`, payload);
-            const updatedProperty = res.data.property; // ✅ FIX: use .property
+            const updated = res.data.property;
 
-            // --- Step 2️⃣: Trigger AI Prediction ---
-            const cleanProperty = { ...updatedProperty };
+            // Prepare cleaned property for prediction
+            const cleanProp = { ...updated };
 
-            // ✅ Ensure numeric fields are valid numbers
+            // Fix numeric fields
             const numericKeys = [
-                "price", "size", "bedrooms", "bathrooms",
-                "remaining_lease", "amenity_score", "health_score",
-                "green_score", "business_access_score",
+                "price", "size", "bedrooms", "bathrooms", "remaining_lease",
+                "amenity_score", "health_score", "green_score", "business_access_score"
             ];
             numericKeys.forEach((key) => {
-                const val = parseFloat(cleanProperty[key]);
-                cleanProperty[key] = isNaN(val) ? 0 : val;
+                const val = parseFloat(cleanProp[key]);
+                cleanProp[key] = isNaN(val) ? 0 : val;
             });
 
-            const predictRes = await api.post("/predict/future", {
-                ...cleanProperty,
-                property_id: cleanProperty.id,
-                user_id: cleanProperty.agent_id,
-            });
+            // -----------------------------------
+            // 2️⃣ RUN CURRENT MARKET PRICE (AVM)
+            // -----------------------------------
+            let aiCurrent = null;
+            let insightText = "";
+            let currentRes = null;  
 
-            const data = predictRes.data;
-            setAiResult(data);
+            try {
+                currentRes = await api.post("/predict/current", {
+                    ...cleanProp,
+                    property_id: cleanProp.id,
+                    user_id: cleanProp.agent_id,
+                });
+
+                aiCurrent = currentRes.data.predicted_total_price;
+
+                const actual = parseFloat(cleanProp.price || 0);
+                const diff = ((actual - aiCurrent) / aiCurrent) * 100;
+
+                if (isNaN(actual)) {
+                    insightText = "⚠️ No listed price provided.";
+                } else if (Math.abs(diff) <= 5) {
+                    insightText = "✅ Fairly Priced — aligned with market average.";
+                } else if (diff > 5) {
+                    insightText = "🔴 Above Market — consider adjusting your price downward.";
+                } else {
+                    insightText = "🟢 Below Market — your listing may attract more buyers.";
+                }
+            } catch (err) {
+                console.warn("Current AVM error:", err);
+                insightText = "⚠️ Unable to fetch current market prediction.";
+            }
+
+            // -----------------------------
+            // 3️⃣ RUN FUTURE RESALE FORECAST
+            // -----------------------------
+            let futureForecast = null;
+
+            try {
+                const predictRes = await api.post("/predict/future", {
+                    ...cleanProp,
+                    property_id: cleanProp.id,
+                    user_id: cleanProp.agent_id,
+                });
+                futureForecast = predictRes.data;
+                setAiResult(futureForecast);
+            } catch (err) {
+                console.warn("Future prediction error:", err);
+            }
+
+            // -----------------------------
+            // 4️⃣ DISPLAY COMBINED AI INSIGHTS
+            // -----------------------------
+            const listedPrice = parseFloat(cleanProp.price || 0);
+
+            let htmlContent = `
+            <div style="text-align:left; font-size:14px; line-height:1.6;">
+                <h4 style="color:#047857;">🏠 AI Current Price Evaluation</h4>
+                <p><strong>Your Listed Price:</strong> $${fmt(listedPrice)}</p>
+                <p><strong>Predicted Market Price:</strong> $${fmt(aiCurrent)}</p>
+                <p><strong>Confidence Range:</strong> $${fmt(currentRes.data.confidence_low)} – $${fmt(currentRes.data.confidence_high)}</p>
+                <p><strong>AI Confidence Level:</strong> ${currentRes.data.confidence_score}%</p>
+                <p style="margin-top:6px;">${insightText}</p>
+        `;
+
+            if (futureForecast) {
+                htmlContent += `
+            <hr style="margin:10px 0;"/>
+            <h4 style="color:#0f766e;">📈 Future Resale Forecast (${futureForecast.years_forward})</h4>
+            <p><strong>Predicted Future Price:</strong> $${fmt(futureForecast.predicted_total_price)}</p>
+            <p><strong>Price per sqm:</strong> $${fmt(futureForecast.predicted_price_per_sqm)}</p>
+            <p><strong>Confidence Range:</strong> $${fmt(futureForecast.confidence_low)} – $${fmt(futureForecast.confidence_high)}</p>
+            <p><strong>AI Confidence Level:</strong> ${futureForecast.confidence_score}%</p>
+            <p><strong>Market Trend:</strong> ${futureForecast.market_trend}</p>
+        `;
+            }
+
+            htmlContent += "</div>";
 
             await Swal.fire({
-                title: "🤖 AI Market Analysis",
-                html: `
-            <div style="text-align:left; font-size:14px;">
-                <p><strong>Predicted Future Price:</strong> $${fmt(data.predicted_total_price)}</p>
-                <p><strong>Price per sqm:</strong> $${fmt(data.predicted_price_per_sqm)}</p>
-                <p><strong>95% Confidence Range:</strong> $${fmt(data.confidence_low)} – $${fmt(data.confidence_high)}</p>
-                <p><strong>AI Confidence Level:</strong> ${data.confidence_score}%</p>
-                <p><strong>Market Trend:</strong> ${data.market_trend || "Market steady with potential growth."}</p>
-            </div>`,
+                title: "🤖 AI Market Insights",
+                html: htmlContent,
                 icon: "success",
                 confirmButtonText: "Done",
-                confirmButtonColor: "#10B981",
+                confirmButtonColor: "#16a34a",
                 width: 520,
             });
 
@@ -238,7 +358,6 @@ export default function EditProperty() {
             console.error(err.response?.data || err.message);
             Swal.fire("Error", "Failed to update or analyze property.", "error");
         }
-
     }
 
     // === Step Navigation ===
@@ -268,7 +387,7 @@ export default function EditProperty() {
         <div className="properties-page">
             <h1 className="page-title">Edit Property Listing</h1>
 
-            {/* === Stepper === */}
+            {/* === STEPPER === */}
             <div className="card" style={{ position: "sticky", top: 0, zIndex: 5 }}>
                 <div className="card-body">
                     <div className="flex items-center justify-between">
@@ -280,8 +399,8 @@ export default function EditProperty() {
                                 >
                                     <div
                                         className={`w-8 h-8 rounded-full flex items-center justify-center border ${i <= currentStep
-                                            ? "bg-emerald-50 border-emerald-600"
-                                            : "bg-gray-100 border-gray-300"
+                                                ? "bg-emerald-50 border-emerald-600"
+                                                : "bg-gray-100 border-gray-300"
                                             }`}
                                     >
                                         {i + 1}
@@ -300,10 +419,13 @@ export default function EditProperty() {
                 </div>
             </div>
 
-            {/* === Form === */}
+            {/* === FORM CONTAINER === */}
             <form className="card mt-6" onSubmit={handleSubmit}>
                 <div className="card-body">
-                    {/* === STEP 1 === */}
+
+                    {/* =======================
+                        STEP 1 — BASIC INFO
+                    ======================== */}
                     {currentStep === 0 && (
                         <div className="form-grid">
                             <div className="full">
@@ -312,15 +434,20 @@ export default function EditProperty() {
                                     type="text"
                                     className="input"
                                     value={form.title || ""}
-                                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({ ...form, title: e.target.value })
+                                    }
                                 />
                             </div>
+
                             <div>
                                 <label className="label">Property Type</label>
                                 <select
                                     className="select"
                                     value={form.property_type || ""}
-                                    onChange={(e) => setForm({ ...form, property_type: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({ ...form, property_type: e.target.value })
+                                    }
                                 >
                                     <option value="">Select</option>
                                     {propertyTypes.map((pt) => (
@@ -330,19 +457,24 @@ export default function EditProperty() {
                                     ))}
                                 </select>
                             </div>
+
                             <div className="full">
                                 <label className="label">Description</label>
                                 <textarea
                                     className="input"
                                     rows="3"
                                     value={form.description || ""}
-                                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({ ...form, description: e.target.value })
+                                    }
                                 />
                             </div>
                         </div>
                     )}
 
-                    {/* === STEP 2 === */}
+                    {/* =======================
+                        STEP 2 — PROPERTY DETAILS
+                    ======================== */}
                     {currentStep === 1 && (
                         <div className="form-grid">
                             {[
@@ -357,7 +489,12 @@ export default function EditProperty() {
                                         type={type}
                                         className="input"
                                         value={form[field] || ""}
-                                        onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+                                        onChange={(e) =>
+                                            setForm({
+                                                ...form,
+                                                [field]: e.target.value,
+                                            })
+                                        }
                                     />
                                 </div>
                             ))}
@@ -367,7 +504,9 @@ export default function EditProperty() {
                                 <select
                                     className="select"
                                     value={form.furnishing || ""}
-                                    onChange={(e) => setForm({ ...form, furnishing: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({ ...form, furnishing: e.target.value })
+                                    }
                                 >
                                     <option value="">Select</option>
                                     {furnishings.map((f) => (
@@ -384,7 +523,9 @@ export default function EditProperty() {
                                     type="text"
                                     className="input"
                                     value={form.floor_level || ""}
-                                    onChange={(e) => setForm({ ...form, floor_level: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({ ...form, floor_level: e.target.value })
+                                    }
                                 />
                             </div>
 
@@ -393,7 +534,9 @@ export default function EditProperty() {
                                 <select
                                     className="select"
                                     value={form.tenure || ""}
-                                    onChange={(e) => setForm({ ...form, tenure: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({ ...form, tenure: e.target.value })
+                                    }
                                 >
                                     <option value="">Select</option>
                                     {tenures.map((t) => (
@@ -410,7 +553,12 @@ export default function EditProperty() {
                                     type="number"
                                     className="input"
                                     value={form.remaining_lease || ""}
-                                    onChange={(e) => setForm({ ...form, remaining_lease: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({
+                                            ...form,
+                                            remaining_lease: e.target.value,
+                                        })
+                                    }
                                 />
                             </div>
 
@@ -419,7 +567,9 @@ export default function EditProperty() {
                                 <select
                                     className="select"
                                     value={form.region || ""}
-                                    onChange={(e) => setForm({ ...form, region: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({ ...form, region: e.target.value })
+                                    }
                                 >
                                     <option value="">Select</option>
                                     <option value="Central">Central</option>
@@ -430,50 +580,94 @@ export default function EditProperty() {
                                 </select>
                             </div>
 
-                            <div className="full">
-                                <label className="label">Amenities</label>
-                                <div className="flex gap-4 flex-wrap">
-                                    {amenities.map((a) => (
-                                        <label key={a.id} className="inline-flex items-center gap-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={form.amenities.includes(a.name)}
-                                                onChange={(e) =>
-                                                    setForm((prev) => ({
-                                                        ...prev,
-                                                        amenities: e.target.checked
-                                                            ? [...prev.amenities, a.name]
-                                                            : prev.amenities.filter((x) => x !== a.name),
-                                                    }))
-                                                }
-                                            />
-                                            {a.name}
-                                        </label>
-                                    ))}
+                            {/* Amenities — same logic as AddProperty */}
+                            {form.property_type === "Condominium" && (
+                                <div className="full">
+                                    <label className="label">Amenities</label>
+                                    <div className="flex gap-4 flex-wrap">
+                                        {amenities.map((a) => (
+                                            <label
+                                                key={a.id}
+                                                className="inline-flex items-center gap-2"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.amenities.includes(a.name)}
+                                                    onChange={(e) =>
+                                                        setForm((prev) => ({
+                                                            ...prev,
+                                                            amenities: e.target.checked
+                                                                ? [...prev.amenities, a.name]
+                                                                : prev.amenities.filter(
+                                                                    (x) => x !== a.name
+                                                                ),
+                                                        }))
+                                                    }
+                                                />
+                                                {a.name}
+                                            </label>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
 
-                    {/* === STEP 3 === */}
+                    {/* ===========================
+                        STEP 3 — LOCATION + GEO DATA
+                    ============================ */}
                     {currentStep === 2 && (
                         <div className="form-grid">
+
+                            {/* LOCATION INPUT */}
                             <div className="full">
                                 <label className="label">Location</label>
-                                <input ref={inputRef} type="text" className="input" defaultValue={form.location || ""} />
+                                <input
+                                    ref={inputRef}
+                                    type="text"
+                                    className="input"
+                                    defaultValue={form.location || ""}
+                                />
                                 <p className="text-sm text-gray-500 mt-2">
-                                    Lat: {Number(form.latitude) ? Number(form.latitude).toFixed(6) : "—"} |
-                                    Lng: {Number(form.longitude) ? Number(form.longitude).toFixed(6) : "—"}
+                                    Lat: {Number(form.latitude)?.toFixed(6) || "—"} |
+                                    Lng: {Number(form.longitude)?.toFixed(6) || "—"}
                                 </p>
                             </div>
-                            <div id="map" className="full" style={{ height: "300px", marginTop: 10 }} />
+
+                            {/* GOOGLE MAP */}
+                            <div
+                                id="map"
+                                className="full"
+                                style={{ height: "300px", marginTop: 10 }}
+                            />
+
+                            {/* PROXIMITY METRICS & SCORES */}
                             {[
-                                ["nearest_mrt_km", "Nearest MRT (km)"],
-                                ["nearest_mall_km", "Nearest Mall (km)"],
-                                ["nearest_school_km", "Nearest School (km)"],
-                                ["nearest_hospital_km", "Nearest Hospital (km)"],
-                                ["nearest_park_km", "Nearest Park (km)"],
-                                ["nearest_business_km", "Nearest Business Hub (km)"],
+                                ["nearest_mrt_km", "Nearest MRT (km)", "nearest_mrt_name"],
+                                ["nearest_mall_km", "Nearest Mall (km)", "nearest_mall_name"],
+                                ["nearest_school_km", "Nearest School (km)", "nearest_school_name"],
+                                ["nearest_hospital_km", "Nearest Polyclinic/Hospital (km)", "nearest_hospital_name"],
+                                ["nearest_park_km", "Nearest Park (km)", "nearest_park_name"],
+                                ["nearest_business_km", "Nearest Business Hub (km)", "nearest_business_name"],
+                            ].map(([field, label, nameField]) => (
+                                <div key={field}>
+                                    <label className="label">{label}</label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            className="input bg-gray-100 cursor-not-allowed"
+                                            value={form[field] || ""}
+                                            readOnly
+                                        />
+                                        <span className="text-sm text-gray-500">
+                                            {form[nameField] || "—"}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {/* SCORES */}
+                            {[
                                 ["amenity_score", "Amenity Score (0–10)"],
                                 ["health_score", "Health Score (0–10)"],
                                 ["green_score", "Green Score (0–10)"],
@@ -483,25 +677,30 @@ export default function EditProperty() {
                                     <label className="label">{label}</label>
                                     <input
                                         type="number"
-                                        step="0.1"
-                                        className="input"
+                                        className="input bg-gray-100 cursor-not-allowed"
                                         value={form[field] || ""}
-                                        onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+                                        readOnly
                                     />
                                 </div>
                             ))}
                         </div>
                     )}
 
-                    {/* === STEP 4 === */}
+                    {/* =======================
+                        STEP 4 — MEDIA UPLOAD
+                    ======================== */}
                     {currentStep === 3 && (
                         <div className="form-grid">
+
+                            {/* PHOTO UPLOAD */}
                             <div className="full">
                                 <div className="upload-btn-wrapper">
                                     <button
                                         type="button"
                                         className="upload-btn"
-                                        onClick={() => document.getElementById("photoInput").click()}
+                                        onClick={() =>
+                                            document.getElementById("photoInput").click()
+                                        }
                                     >
                                         + Upload Photos
                                     </button>
@@ -514,10 +713,15 @@ export default function EditProperty() {
                                         onChange={handlePhotoUpload}
                                     />
                                 </div>
+
                                 <div className="photo-grid">
                                     {form.photos.map((url, idx) => (
                                         <div key={idx} className="photo-card">
-                                            <img src={url} alt={`Photo ${idx + 1}`} className="photo-img" />
+                                            <img
+                                                src={url}
+                                                alt={`Photo ${idx + 1}`}
+                                                className="photo-img"
+                                            />
                                             <button
                                                 type="button"
                                                 className="delete-btn"
@@ -530,32 +734,48 @@ export default function EditProperty() {
                                 </div>
                             </div>
 
+                            {/* FLOOR PLAN */}
                             <div className="full">
                                 <label className="label">Floor Plan (optional)</label>
                                 <input
                                     type="text"
                                     className="input"
                                     value={form.floor_plan || ""}
-                                    onChange={(e) => setForm({ ...form, floor_plan: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({
+                                            ...form,
+                                            floor_plan: e.target.value,
+                                        })
+                                    }
                                 />
                             </div>
 
+                            {/* VIDEO URL */}
                             <div className="full">
                                 <label className="label">Video URL (optional)</label>
                                 <input
                                     type="text"
                                     className="input"
                                     value={form.video_url || ""}
-                                    onChange={(e) => setForm({ ...form, video_url: e.target.value })}
+                                    onChange={(e) =>
+                                        setForm({
+                                            ...form,
+                                            video_url: e.target.value,
+                                        })
+                                    }
                                 />
                             </div>
                         </div>
                     )}
 
-                    {/* === STEP 5 === */}
+                    {/* =======================
+                        STEP 5 — REVIEW SUMMARY
+                    ======================== */}
                     {currentStep === 4 && (
                         <div className="review-section">
-                            <h3 className="text-lg font-semibold mb-3">Review Property Summary</h3>
+                            <h3 className="text-lg font-semibold mb-3">
+                                Review Property Summary
+                            </h3>
                             <ul className="summary-list">
                                 <li><strong>Title:</strong> {form.title}</li>
                                 <li><strong>Type:</strong> {form.property_type}</li>
@@ -565,15 +785,17 @@ export default function EditProperty() {
                                 <li><strong>Size:</strong> {form.size} sqft</li>
                                 <li><strong>Tenure:</strong> {form.tenure}</li>
                                 <li><strong>Region:</strong> {form.region}</li>
+                                <li><strong>Remaining Lease:</strong> {form.remaining_lease}</li>
                                 <li><strong>Furnishing:</strong> {form.furnishing}</li>
                                 <li><strong>Floor Level:</strong> {form.floor_level}</li>
                                 <li><strong>Amenities:</strong> {form.amenities.join(", ")}</li>
+                                <li><strong>Location:</strong> {form.location}</li>
                             </ul>
                         </div>
                     )}
                 </div>
 
-                {/* === Footer Buttons === */}
+                {/* === FOOTER BUTTONS === */}
                 <div className="card-body flex flex-col md:flex-row justify-between gap-4">
                     <div className="flex gap-2">
                         <button
@@ -588,7 +810,8 @@ export default function EditProperty() {
                         {currentStep < steps.length - 1 ? (
                             <button
                                 type="button"
-                                className={`btn btn-primary ${!canGoNext() ? "opacity-50 cursor-not-allowed" : ""}`}
+                                className={`btn btn-primary ${!canGoNext() ? "opacity-50 cursor-not-allowed" : ""
+                                    }`}
                                 disabled={!canGoNext()}
                                 onClick={nextStep}
                             >
