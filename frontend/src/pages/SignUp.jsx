@@ -167,7 +167,7 @@ export default function SignUp() {
             if (role === "agent") {
                 setError("Your account is pending admin approval.");
             } else {
-                navigate("/payment", {
+                navigate("/subscribe", {
                     state: { role, email: form.email.trim() },
                 });
             }
@@ -193,7 +193,7 @@ export default function SignUp() {
             if (data.user.role === "agent" && data.user.status === "pending") {
                 setError("Your account is pending admin approval. You cannot log in yet.");
             } else {
-                navigate("/payment", {
+                navigate("/subscribe", {
                     state: { role: data.user.role, email: data.user.email },
                 });
             }

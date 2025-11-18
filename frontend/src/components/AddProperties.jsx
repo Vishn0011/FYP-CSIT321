@@ -774,32 +774,116 @@ export default function AddProperties() {
 
                     {/* STEP 5: REVIEW */}
                     {currentStep === 4 && (
-                        <div className="review-section">
-                            <h3 className="text-lg font-semibold mb-3">Review Property Summary</h3>
-                            <ul className="summary-list">
-                                <li><strong>Title:</strong> {form.title}</li>
-                                <li><strong>Type:</strong> {form.property_type}</li>
-                                <li><strong>Price:</strong> ${form.price}</li>
-                                <li><strong>Bedrooms:</strong> {form.bedrooms} | <strong>Bathrooms:</strong> {form.bathrooms}</li>
-                                <li><strong>Size:</strong> {form.size} sqft</li>
-                                <li><strong>Region:</strong> {form.region}</li>
-                                <li><strong>Tenure:</strong> {form.tenure}</li>
-                                <li><strong>Remaining Lease:</strong> {form.remaining_lease}</li>
-                                <li><strong>Furnishing:</strong> {form.furnishing}</li>
-                                <li><strong>Floor Level:</strong> {form.floor_level}</li>
-                                <li><strong>Nearest MRT:</strong> {form.nearest_mrt_km} km</li>
-                                <li><strong>Nearest Mall:</strong> {form.nearest_mall_km} km</li>
-                                <li><strong>Nearest School:</strong> {form.nearest_school_km} km</li>
-                                <li><strong>Nearest Polyclinic:</strong> {form.nearest_hospital_km} km</li>
-                                <li><strong>Nearest Park:</strong> {form.nearest_park_km} km</li>
-                                <li><strong>Nearest Business Hub:</strong> {form.nearest_business_km} km</li>
-                                <li><strong>Amenity Score:</strong> {form.amenity_score}</li>
-                                <li><strong>Health Score:</strong> {form.health_score}</li>
-                                <li><strong>Green Score:</strong> {form.green_score}</li>
-                                <li><strong>Business Access Score:</strong> {form.business_access_score}</li>
-                                <li><strong>Location:</strong> {form.location}</li>
-                                <li><strong>Amenities:</strong> {form.amenities.join(", ")}</li>
-                            </ul>
+                        <div className="review-section bg-white shadow-lg rounded-2xl p-6 border border-gray-100">
+
+                            {/* HEADER */}
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-2xl font-bold text-emerald-700 flex items-center gap-2">
+                                    🏡 Review Property Summary
+                                </h3>
+                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-sm rounded-lg">
+                                    Step 5 of 5
+                                </span>
+                            </div>
+
+                            {/* TAG STRIP */}
+                            <div className="flex flex-wrap gap-2 mb-6">
+                                <span className="tag-chip">🏷️ {form.property_type}</span>
+                                <span className="tag-chip">🛏 {form.bedrooms} BR</span>
+                                <span className="tag-chip">🛁 {form.bathrooms} Baths</span>
+                                <span className="tag-chip">📐 {form.size} sqft</span>
+                                <span className="tag-chip">📍 {form.region}</span>
+                                <span className="tag-chip">🏢 {form.floor_level} Floor</span>
+                                <span className="tag-chip">🔑 {form.tenure}</span>
+                            </div>
+
+                            {/* MAIN HERO */}
+                            <div className="flex justify-between gap-8 mb-8">
+
+                                {/* LEFT */}
+                                <div className="flex-1">
+                                    <h2 className="text-xl font-semibold mb-1">{form.title}</h2>
+                                    <p className="text-gray-600 mb-3">📍 {form.location}</p>
+
+                                    <p className="text-3xl font-bold text-emerald-600 mb-3">
+                                        ${Number(form.price).toLocaleString()}
+                                    </p>
+
+                                    <div className="text-gray-700 space-y-1 text-sm">
+                                        <p><strong>Remaining Lease:</strong> {form.remaining_lease} years</p>
+                                        <p><strong>Furnishing:</strong> {form.furnishing}</p>
+                                        <p><strong>Floor Level:</strong> {form.floor_level}</p>
+                                    </div>
+                                </div>
+
+                                {/* RIGHT - IMAGE */}
+                                <div className="w-40 h-32 rounded-md overflow-hidden shadow-md">
+                                    {form.photos?.[0] ? (
+                                        <img src={form.photos[0]} alt="Property" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full bg-gray-200 flex items-center justify-center text-gray-500">
+                                            No Image
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* MAP PREVIEW FIXED & CLEAN */}
+                            {form.latitude && form.longitude && (
+                                <>
+                                    <h4 className="section-label">🗺️ Map Preview</h4>
+                                    <img
+                                        src={`https://maps.googleapis.com/maps/api/staticmap?center=${form.latitude},${form.longitude}&zoom=16&size=600x300&markers=color:red|${form.latitude},${form.longitude}&key=AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw`}
+                                        alt="Map preview"
+                                        className="rounded-xl shadow mb-6"
+                                    />
+                                </>
+                            )}
+
+                            {/* GEO ACCESSIBILITY */}
+                            <h4 className="section-label">📍 Location & Accessibility</h4>
+
+                            <div className="grid grid-cols-2 gap-x-12 gap-y-3 text-sm mb-6">
+
+                                <p><span className="font-semibold">MRT:</span> {form.nearest_mrt_name}
+                                    <span className="text-gray-500"> ({form.nearest_mrt_km} km)</span>
+                                </p>
+
+                                <p><span className="font-semibold">School:</span> {form.nearest_school_name}
+                                    <span className="text-gray-500"> ({form.nearest_school_km} km)</span>
+                                </p>
+
+                                <p><span className="font-semibold">Mall:</span> {form.nearest_mall_name}
+                                    <span className="text-gray-500"> ({form.nearest_mall_km} km)</span>
+                                </p>
+
+                                <p><span className="font-semibold">Hospital:</span> {form.nearest_hospital_name}
+                                    <span className="text-gray-500"> ({form.nearest_hospital_km} km)</span>
+                                </p>
+
+                                <p><span className="font-semibold">Park:</span> {form.nearest_park_name}
+                                    <span className="text-gray-500"> ({form.nearest_park_km} km)</span>
+                                </p>
+                            </div>
+
+                            {/* AMENITIES — ONLY CONDO */}
+                            {form.property_type !== "HDB" && (
+                                <>
+                                    <h4 className="section-label">🏢 Condo Facilities</h4>
+                                    <div className="flex flex-wrap gap-2 mb-6">
+                                        {form.amenities?.length > 0 ? (
+                                            form.amenities.map((a, i) => (
+                                                <span key={i} className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-sm shadow-sm">
+                                                    ✔ {a}
+                                                </span>
+                                            ))
+                                        ) : (
+                                            <p className="text-gray-500 text-sm">No condo facilities selected</p>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+
                         </div>
                     )}
                 </div>

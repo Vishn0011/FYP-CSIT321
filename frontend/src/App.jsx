@@ -23,7 +23,7 @@ import HomebuyerSearch from "./pages/HomebuyerSearch";
 import AdminListings from "./pages/AdminListings.jsx";
 import AdminAnnouncements from "./pages/AdminAnnouncements.jsx";
 import AdminAnnouncementNew from "./pages/AdminAnnouncementNew.jsx";
-import Payment from "./pages/Payment";
+import Subscribe from "./pages/Subscribe";
 import ProfilePage from "./pages/ProfilePage";
 import UserAnnouncementPopup from "./components/UserAnnouncementPopup";
 
@@ -240,7 +240,7 @@ export default function App() {
                         <Route path="/" element={<LoginPage />} />
                         <Route path="/home" element={<HomePage />} />
                         <Route path="/signup" element={<SignUp />} />
-                        <Route path="/payment" element={<Payment />} />
+                        <Route path="/subscribe" element={<Subscribe />} />
                         {/* Default fallback */}
                         <Route path="*" element={<LoginPage />} />
                     </Routes>
