@@ -109,9 +109,9 @@ export default function HomeownerPreferenceForm({
     const pref = useMemo(() => ensurePreferenceShape(value), [value]);
     const [customLocation, setCustomLocation] = useState("");
 
-    const emitChange = (patch) => {
+    const emitChange = (patch, replace = false) => {
         if (typeof onChange === "function") {
-            onChange({ ...pref, ...patch });
+            onChange(replace ? ensurePreferenceShape(patch) : { ...pref, ...patch });
         }
     };
 
@@ -127,6 +127,19 @@ export default function HomeownerPreferenceForm({
         if (!next) return;
         emitChange({ locations: toggleValue(pref.locations, next, 5) });
         setCustomLocation("");
+    };
+
+    const handleLocationRemove = (location) => {
+        emitChange({ locations: pref.locations.filter((item) => item !== location) });
+    };
+
+    const handleLocationsClear = () => {
+        emitChange({ locations: [] });
+    };
+
+    const handleReset = () => {
+        setCustomLocation("");
+        emitChange(buildDefaultPreferences(), true);
     };
 
     return (
@@ -202,6 +215,29 @@ export default function HomeownerPreferenceForm({
                         </button>
                     ))}
                 </div>
+                {pref.locations.length > 0 && (
+                    <div className="pref-chip-group pref-chip-group--selected">
+                        {pref.locations.map((location) => (
+                            <button
+                                key={location}
+                                type="button"
+                                className="pref-chip is-active pref-chip--removable"
+                                onClick={() => handleLocationRemove(location)}
+                            >
+                                <span>{location}</span>
+                                <span className="pref-chip__remove" aria-hidden="true">
+                                    &times;
+                                </span>
+                                <span className="sr-only">Remove {location}</span>
+                            </button>
+                        ))}
+                        {pref.locations.length > 1 && (
+                            <button type="button" className="pref-chip pref-chip--muted" onClick={handleLocationsClear}>
+                                Clear all
+                            </button>
+                        )}
+                    </div>
+                )}
                 <div className="pref-inline-form">
                     <input
                         type="text"
@@ -253,6 +289,9 @@ export default function HomeownerPreferenceForm({
             </div>
 
             <div className="pref-actions">
+                <button type="button" className="btn btn-outline" onClick={handleReset} disabled={submitting}>
+                    Reset to defaults
+                </button>
                 {onCancel && (
                     <button type="button" className="btn btn-outline" onClick={onCancel}>
                         Maybe later

@@ -89,6 +89,9 @@ const clampBedroomsValue = (value) => {
 const normalizeBedroomValue = (value) =>
   value <= BEDROOM_MIN ? "" : String(value);
 
+const getPrefPromptStorageKey = (userId) =>
+  userId ? `homeowner-pref-prompt-dismissed:${userId}` : null;
+
 const getPrimaryPhoto = (photos) => {
   if (!photos) return null;
   if (Array.isArray(photos)) return photos[0] || null;
@@ -167,6 +170,19 @@ export default function HomebuyerSearch() {
       ? "Any bedrooms"
       : `${preferences.bedrooms} BR`;
   const summaryLocation = preferences?.locations?.[0] || "All neighborhoods";
+  const persistPrefPromptState = useCallback(
+    (dismissed) => {
+      if (typeof window === "undefined") return;
+      const key = getPrefPromptStorageKey(user?.id);
+      if (!key) return;
+      if (dismissed) {
+        window.sessionStorage.setItem(key, "true");
+      } else {
+        window.sessionStorage.removeItem(key);
+      }
+    },
+    [user?.id]
+  );
 
   const refreshSaved = useCallback(async () => {
     try {
@@ -312,6 +328,10 @@ export default function HomebuyerSearch() {
         if (prefData) {
           setPreferences(prefData);
           setPrefDraft(prefData);
+          if (prefPromptDismissed) {
+            setPrefPromptDismissed(false);
+            persistPrefPromptState(false);
+          }
           if (apply) {
             applyPreferenceFilters(prefData, { runSearch: true, force: true });
           }
@@ -319,6 +339,8 @@ export default function HomebuyerSearch() {
           setPreferences(null);
           setPrefDraft(ensurePreferenceShape());
           if (prompt && !prefPromptDismissed) {
+            setPrefPromptDismissed(true);
+            persistPrefPromptState(true);
             setPrefModalOpen(true);
           }
         }
@@ -326,7 +348,7 @@ export default function HomebuyerSearch() {
         console.error("Failed to load homeowner preferences", error);
       }
     },
-    [isHomeowner, prefPromptDismissed, applyPreferenceFilters]
+    [isHomeowner, prefPromptDismissed, applyPreferenceFilters, persistPrefPromptState]
   );
 
   const handleOpenPreferenceModal = () => {
@@ -346,6 +368,7 @@ export default function HomebuyerSearch() {
         setPrefDraft(normalized);
         setPrefModalOpen(false);
         setPrefPromptDismissed(false);
+        persistPrefPromptState(false);
         applyPreferenceFilters(normalized, { runSearch: true, force: true });
         window.dispatchEvent(new Event("homeowner-preferences:updated"));
       } catch (error) {
@@ -355,13 +378,14 @@ export default function HomebuyerSearch() {
         setPrefSaving(false);
       }
     },
-    [applyPreferenceFilters]
+    [applyPreferenceFilters, persistPrefPromptState]
   );
 
-  const handlePreferenceSkip = () => {
+  const handlePreferenceSkip = useCallback(() => {
     setPrefModalOpen(false);
     setPrefPromptDismissed(true);
-  };
+    persistPrefPromptState(true);
+  }, [persistPrefPromptState]);
 
   const toggleSave = useCallback(async (property) => {
     const exists = saved.some((entry) => entry.id === property.id);
@@ -587,7 +611,17 @@ export default function HomebuyerSearch() {
 
   useEffect(() => {
     prefInitRef.current = false;
-    setPrefPromptDismissed(false);
+    if (typeof window === "undefined") {
+      setPrefPromptDismissed(false);
+      return;
+    }
+    const key = getPrefPromptStorageKey(user?.id);
+    if (!key) {
+      setPrefPromptDismissed(false);
+      return;
+    }
+    const storedValue = window.sessionStorage.getItem(key) === "true";
+    setPrefPromptDismissed(storedValue);
   }, [user?.id]);
 
   useEffect(() => {
