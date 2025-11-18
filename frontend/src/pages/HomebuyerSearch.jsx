@@ -125,6 +125,10 @@ export default function HomebuyerSearch() {
   const { user } = useAuth();
   const [q, setQ] = useState("");
   const [location, setLocation] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState({ titles: [], locations: [] });
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [locationFocused, setLocationFocused] = useState(false);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [bedrooms, setBedrooms] = useState("");
@@ -170,6 +174,7 @@ export default function HomebuyerSearch() {
       ? "Any bedrooms"
       : `${preferences.bedrooms} BR`;
   const summaryLocation = preferences?.locations?.[0] || "All neighborhoods";
+
   const persistPrefPromptState = useCallback(
     (dismissed) => {
       if (typeof window === "undefined") return;
@@ -183,6 +188,77 @@ export default function HomebuyerSearch() {
     },
     [user?.id]
   );
+
+  // --- Suggestions: combined search box (title/location) ---
+  useEffect(() => {
+    if (!user) {
+      setSearchSuggestions({ titles: [], locations: [] });
+      return;
+    }
+
+    const term = q.trim();
+    if (!searchFocused || term.length < 2) {
+      setSearchSuggestions({ titles: [], locations: [] });
+      return;
+    }
+
+    const controller = new AbortController();
+    const handle = window.setTimeout(async () => {
+      try {
+        const { data } = await api.get("/homeowner/properties/suggest", {
+          params: { q: term, limit: 6 },
+          signal: controller.signal,
+        });
+        setSearchSuggestions({
+          titles: data?.titles || [],
+          locations: data?.locations || [],
+        });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Failed to fetch search suggestions", error);
+        setSearchSuggestions({ titles: [], locations: [] });
+      }
+    }, 120);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(handle);
+    };
+  }, [q, searchFocused, user]);
+
+  // --- Suggestions: location box ---
+  useEffect(() => {
+    if (!user) {
+      setLocationSuggestions([]);
+      return;
+    }
+
+    const term = location.trim();
+    if (!locationFocused || term.length < 2) {
+      setLocationSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const handle = window.setTimeout(async () => {
+      try {
+        const { data } = await api.get("/homeowner/properties/suggest", {
+          params: { location: term, limit: 6 },
+          signal: controller.signal,
+        });
+        setLocationSuggestions(data?.locations || []);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Failed to fetch location suggestions", error);
+        setLocationSuggestions([]);
+      }
+    }, 120);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(handle);
+    };
+  }, [location, locationFocused, user]);
 
   const refreshSaved = useCallback(async () => {
     try {
@@ -463,6 +539,18 @@ export default function HomebuyerSearch() {
 
   const handleSearchClear = useCallback(() => setQ(""), []);
   const handleLocationClear = useCallback(() => setLocation(""), []);
+  const handleSearchSuggestionSelect = useCallback((value) => {
+    setQ(value);
+    setSearchFocused(false);
+  }, []);
+  const handleSearchLocationSelect = useCallback((value) => {
+    setLocation(value);
+    setSearchFocused(false);
+  }, []);
+  const handleLocationSuggestionSelect = useCallback((value) => {
+    setLocation(value);
+    setLocationFocused(false);
+  }, []);
 
   const handleBedroomPreset = useCallback((value) => {
     setBedrooms((prev) => (prev === value ? "" : value));
@@ -486,6 +574,12 @@ export default function HomebuyerSearch() {
     bedrooms === ""
       ? "bedroom-stepper__count is-any"
       : "bedroom-stepper__count";
+
+  const hasSearchSuggestions =
+    (searchSuggestions?.titles?.length || 0) +
+      (searchSuggestions?.locations?.length || 0) >
+    0;
+  const hasLocationSuggestions = locationSuggestions.length > 0;
 
   const normalizedMinPrice = minPrice === "" ? PRICE_MIN : Number(minPrice);
   const normalizedMaxPrice = maxPrice === "" ? PRICE_MAX : Number(maxPrice);
@@ -763,7 +857,7 @@ export default function HomebuyerSearch() {
             <div className="form-grid">
               <div className="filter-field filter-field--wide">
                 <label className="label">Search (title/location)</label>
-                <div className="filter-field__control">
+                <div className="filter-field__control autocomplete">
                   <SearchIcon className="filter-field__icon" aria-hidden="true" />
                   <input
                     className="input filter-field__input"
@@ -771,6 +865,9 @@ export default function HomebuyerSearch() {
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     onKeyDown={handleSearchKeyDown}
+                    onFocus={() => setSearchFocused(true)}
+                    onBlur={() => window.setTimeout(() => setSearchFocused(false), 120)}
+                    autoComplete="off"
                   />
                   {q && (
                     <button
@@ -782,6 +879,42 @@ export default function HomebuyerSearch() {
                       Clear
                     </button>
                   )}
+                  {searchFocused && hasSearchSuggestions && (
+                    <div className="autocomplete__menu">
+                      {searchSuggestions?.titles?.length > 0 && (
+                        <div className="autocomplete__section">
+                          <p className="autocomplete__label">Projects &amp; titles</p>
+                          {searchSuggestions.titles.map((item) => (
+                            <button
+                              key={`title-${item}`}
+                              type="button"
+                              className="autocomplete__item"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => handleSearchSuggestionSelect(item)}
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {searchSuggestions?.locations?.length > 0 && (
+                        <div className="autocomplete__section">
+                          <p className="autocomplete__label">Locations</p>
+                          {searchSuggestions.locations.map((item) => (
+                            <button
+                              key={`loc-${item}`}
+                              type="button"
+                              className="autocomplete__item"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => handleSearchLocationSelect(item)}
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <p className="filter-field__hint">
                   Search by project name, neighbourhood, or postal code.
@@ -789,7 +922,7 @@ export default function HomebuyerSearch() {
               </div>
               <div className="filter-field filter-field--wide">
                 <label className="label">Location</label>
-                <div className="filter-field__control">
+                <div className="filter-field__control autocomplete">
                   <MapPin className="filter-field__icon" aria-hidden="true" />
                   <input
                     className="input filter-field__input"
@@ -797,6 +930,9 @@ export default function HomebuyerSearch() {
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
                     onKeyDown={handleSearchKeyDown}
+                    onFocus={() => setLocationFocused(true)}
+                    onBlur={() => window.setTimeout(() => setLocationFocused(false), 120)}
+                    autoComplete="off"
                   />
                   {location && (
                     <button
@@ -807,6 +943,21 @@ export default function HomebuyerSearch() {
                     >
                       Clear
                     </button>
+                  )}
+                  {locationFocused && hasLocationSuggestions && (
+                    <div className="autocomplete__menu">
+                      {locationSuggestions.map((item) => (
+                        <button
+                          key={`loc-only-${item}`}
+                          type="button"
+                          className="autocomplete__item"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => handleLocationSuggestionSelect(item)}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
                 <p className="filter-field__hint">

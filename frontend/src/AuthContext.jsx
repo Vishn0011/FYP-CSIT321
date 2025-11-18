@@ -28,6 +28,21 @@ export function AuthProvider({ children }) {
         setLoading(false);
     }, []);
 
+    const clearWelcomeFlags = useCallback(() => {
+        try {
+            const keys = [];
+            for (let i = 0; i < sessionStorage.length; i += 1) {
+                const key = sessionStorage.key(i);
+                if (key && key.startsWith("welcome_seen:")) {
+                    keys.push(key);
+                }
+            }
+            keys.forEach((key) => sessionStorage.removeItem(key));
+        } catch {
+            // swallow storage errors
+        }
+    }, []);
+
     const setUserData = useCallback((nextUserOrUpdater) => {
         setUser((prev) => {
             const resolved =
@@ -46,6 +61,7 @@ export function AuthProvider({ children }) {
     }, []);
 
     const login = (userData, tokenData) => {
+        clearWelcomeFlags(); // ensure next session shows welcome flow again
         if (userData) {
             setUserData(userData);
         }
@@ -66,6 +82,7 @@ export function AuthProvider({ children }) {
         setToken(null);
         localStorage.removeItem("token");
         delete api.defaults.headers.common["Authorization"];
+        clearWelcomeFlags();
     };
 
     return (

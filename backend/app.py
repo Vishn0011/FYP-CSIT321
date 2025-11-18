@@ -1799,7 +1799,6 @@ def homebuyer_properties():
     params.extend([limit, offset])
 
     rows = query_all(query, params)
-    rows = query_all(query, params)
 
     # Decode photos JSON safely (so frontend gets arrays instead of raw strings)
     for row in rows:
@@ -1814,6 +1813,62 @@ def homebuyer_properties():
             row["photos"] = []
 
     return jsonify({"success": True, "items": rows, "page": page, "limit": limit})
+
+# --- Suggestions for search inputs (homebuyers) ---
+@app.get("/api/homeowner/properties/suggest")
+@auth_required
+def suggest_homebuyer_properties():
+    """
+    Lightweight suggestions for the homebuyer search inputs.
+    - `q` matches titles (and also drives location suggestions for the combined box)
+    - `location` matches locations directly
+    """
+    q = request.args.get("q", "").strip()
+    loc = request.args.get("location", "").strip()
+    limit = request.args.get("limit", type=int) or 6
+    limit = max(1, min(limit, 20))
+
+    if not q and not loc:
+        return jsonify({"titles": [], "locations": []})
+
+    titles = []
+    locations = []
+
+    try:
+        if q:
+            rows = query_all(
+                """
+                SELECT DISTINCT title
+                FROM properties
+                WHERE status = 'Active'
+                  AND title ILIKE %s
+                ORDER BY title ASC
+                LIMIT %s;
+                """,
+                [f"%{q}%", limit],
+            )
+            titles = [row["title"] for row in rows if row.get("title")]
+
+        # Use explicit location input when present; otherwise reuse `q` so the combined search still yields districts.
+        if loc or q:
+            needle = loc or q
+            rows = query_all(
+                """
+                SELECT DISTINCT location
+                FROM properties
+                WHERE status = 'Active'
+                  AND location ILIKE %s
+                ORDER BY location ASC
+                LIMIT %s;
+                """,
+                [f"%{needle}%", limit],
+            )
+            locations = [row["location"] for row in rows if row.get("location")]
+
+        return jsonify({"titles": titles, "locations": locations})
+    except Exception as e:
+        print("Suggestion lookup failed:", e)
+        return jsonify({"titles": [], "locations": []}), 500
 
 # --- Saved properties (homeowner) ---
 @app.get("/api/homeowner/saved")

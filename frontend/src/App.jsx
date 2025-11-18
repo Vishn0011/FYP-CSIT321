@@ -26,6 +26,7 @@ import AdminAnnouncementNew from "./pages/AdminAnnouncementNew.jsx";
 import Subscribe from "./pages/Subscribe";
 import ProfilePage from "./pages/ProfilePage";
 import UserAnnouncementPopup from "./components/UserAnnouncementPopup";
+import WelcomeVideo from "./pages/WelcomeVideo";
 
 
 
@@ -97,6 +98,14 @@ export default function App() {
                         <Route path="/admin/login" element={<AdminLogin />} />
                         <Route path="/properties/all" element={<AllPropertiesPage />} />
                         <Route path="/explore/properties/:id" element={<PublicPropertyPage />} />
+                        <Route
+                            path="/welcome"
+                            element={
+                                <RequireAuth>
+                                    <WelcomeVideo />
+                                </RequireAuth>
+                            }
+                        />
                         
                         <Route
                             path="/admin"
