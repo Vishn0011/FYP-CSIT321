@@ -4550,6 +4550,188 @@ def get_prediction(property_id):
         print("❌ Prediction fetch error:", e)
         return jsonify({"success": False, "message": "Error fetching prediction."}), 500
 
+# --- Property tour booking ---
+@app.post("/api/tours")
+def create_tour():
+    body = request.get_json(force=True) or {}
+
+    property_id = body.get("property_id")
+    agent_id = body.get("agent_id")
+    user_id = body.get("user_id")
+    preferred_date = body.get("preferred_date")
+    preferred_time = body.get("preferred_time")
+    tour_type = body.get("tour_type") or "In-Person"
+    message = body.get("message") or ""
+
+    with get_cursor_cm() as cur:
+
+        # 1️⃣ Create tour request
+        cur.execute("""
+            INSERT INTO property_tours (
+                property_id, agent_id, user_id,
+                preferred_date, preferred_time,
+                tour_type, message
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id;
+        """, [
+            property_id, agent_id, user_id,
+            preferred_date, preferred_time,
+            tour_type, message,
+        ])
+        tour_id = cur.fetchone()["id"]     # ✔ FIXED
+
+        # Fetch property + buyer
+        cur.execute("SELECT title, location FROM properties WHERE id = %s", [property_id])
+        prop = cur.fetchone()
+
+        cur.execute("SELECT name FROM users WHERE id = %s", [user_id])
+        buyer = cur.fetchone()
+
+        # 2️⃣ Announcement for AGENT
+        cur.execute("""
+            INSERT INTO announcements
+                (title, body_md, kind, channel_web, channel_email, priority, status)
+            VALUES
+                (%s, %s, 'general', TRUE, FALSE, 0, 'active')
+            RETURNING id;
+        """, [
+            f"New Tour Request – {prop['title']}",
+            f"""
+🗓 {preferred_date} at {preferred_time}  
+👤 Buyer: {buyer['name']}  
+🏡 {prop['title']}  
+📍 {prop['location']}  
+"""
+        ])
+        ann_agent_id = cur.fetchone()["id"]     # ✔ FIXED
+
+        # Assign to AGENT ONLY
+        cur.execute("""
+            INSERT INTO announcement_targets (announcement_id, include_user_ids)
+            VALUES (%s, %s)
+        """, [ann_agent_id, [agent_id]])
+
+        # 3️⃣ Announcement for BUYER
+        cur.execute("""
+            INSERT INTO announcements
+                (title, body_md, kind, channel_web, channel_email, priority, status)
+            VALUES
+                (%s, %s, 'general', TRUE, FALSE, 0, 'active')
+            RETURNING id;
+        """, [
+            "Your Tour Request Has Been Sent",
+            f"""
+You requested a viewing for **{prop['title']}**.
+🗓 {preferred_date} at {preferred_time}  
+Type: {tour_type}
+"""
+        ])
+        ann_buyer_id = cur.fetchone()["id"]    # ✔ FIXED
+
+        # Assign to BUYER ONLY
+        cur.execute("""
+            INSERT INTO announcement_targets (announcement_id, include_user_ids)
+            VALUES (%s, %s)
+        """, [ann_buyer_id, [user_id]])
+
+    return jsonify({"ok": True, "tour_id": tour_id})
+
+# --- Update tour status (Accept/Decline) ---
+@app.patch("/api/tours/<int:tour_id>")
+def update_tour_status(tour_id):
+    body = request.get_json(force=True) or {}
+    status = body.get("status")
+
+    with get_cursor_cm() as cur:
+
+        # Get the tour
+        cur.execute("SELECT * FROM property_tours WHERE id = %s", [tour_id])
+        tour = cur.fetchone()
+        if not tour:
+            return jsonify({"error": "Tour not found"}), 404
+
+        # Update status
+        cur.execute("""
+            UPDATE property_tours
+            SET status = %s
+            WHERE id = %s
+        """, [status, tour_id])
+
+        # Get property
+        cur.execute("SELECT title FROM properties WHERE id = %s",
+            [tour["property_id"]])
+        prop = cur.fetchone()
+
+        ann_title = f"Tour {status} – {prop['title']}"
+        ann_body = (
+            "🎉 Your tour request has been accepted! The agent will meet you as scheduled."
+            if status == "Accepted"
+            else "❌ The agent has declined your requested timing. You may request a new one."
+        )
+
+        # --- FIXED INSERT ---
+        cur.execute("""
+            INSERT INTO announcements
+                (title, body_md, kind, channel_web, channel_email, priority, status, created_by)
+            VALUES
+                (%s, %s, 'general', TRUE, FALSE, 0, 'active', %s)
+            RETURNING id;
+        """, [ann_title, ann_body, tour["agent_id"]])
+        
+        ann_id = cur.fetchone()["id"]
+
+        # --- Target only buyer ---
+        cur.execute("""
+            INSERT INTO announcement_targets (announcement_id, include_user_ids)
+            VALUES (%s, %s)
+        """, [ann_id, [tour["user_id"]]])
+
+    return jsonify({"ok": True})
+
+
+# --- Get tours for a specific agent ---
+@app.get("/api/tours/agent/<int:agent_id>")
+def get_agent_tours(agent_id):
+    status = request.args.get("status", "All")
+
+    query = """
+        SELECT 
+            t.id,
+            t.property_id,
+            t.agent_id,
+            t.user_id,
+            t.preferred_date,
+            t.preferred_time,
+            t.tour_type,
+            t.status,
+            t.message,
+            t.created_at,
+
+            p.title AS property_title,
+            p.location AS property_location,
+
+            u.name AS buyer_name,
+            u.email AS buyer_email,
+            u.phone AS buyer_phone
+        FROM property_tours t
+        JOIN properties p ON p.id = t.property_id
+        JOIN users u ON u.id = t.user_id
+        WHERE t.agent_id = %s
+    """
+
+    params = [agent_id]
+
+    if status != "All":
+        query += " AND t.status = %s"
+        params.append(status)
+
+    query += " ORDER BY t.created_at DESC"
+
+    rows = query_all(query, params)
+    return jsonify({"ok": True, "tours": rows})
+
+
 
 
 if __name__ == "__main__":

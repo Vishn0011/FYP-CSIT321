@@ -22,6 +22,8 @@ export default function PropertiesPage() {
     const [showAll, setShowAll] = useState(false);
     const [statusFilter, setStatusFilter] = useState("All");
     const [activeChat, setActiveChat] = useState(null);
+    const [tours, setTours] = useState([]);
+    const [tourFilter, setTourFilter] = useState("Pending");
 
 
     // Fetch properties + enquiries
@@ -51,6 +53,61 @@ export default function PropertiesPage() {
         } catch (err) {
             console.error("Failed to fetch enquiries");
         }
+    }
+
+    //Fetch tours when filter changes
+    useEffect(() => {
+        fetchTours();
+    }, [tourFilter]);
+
+    async function fetchTours() {
+        try {
+            const res = await api.get(`/tours/agent/${agentId}`, {
+                params: { status: tourFilter }
+            });
+
+            if (res.data.ok) {
+                setTours(res.data.tours);
+            }
+        } catch (err) {
+            console.error("Failed to fetch tours", err);
+        }
+    }
+
+
+    // Update tour status
+    async function handleTourStatusUpdate(tour, status) {
+        Swal.fire({
+            title: `${status} this tour?`,
+            text: status === "Accepted"
+                ? "The buyer will be notified instantly."
+                : "You are declining this tour request.",
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonColor: "#00674f",
+            cancelButtonColor: "#d33",
+            confirmButtonText: `Yes, ${status}`
+        }).then(async (result) => {
+            if (!result.isConfirmed) return;
+
+            try {
+                const res = await api.patch(`/tours/${tour.id}`, { status });
+
+                if (res.data.ok) {
+                    Swal.fire({
+                        icon: "success",
+                        title: `Tour ${status}`,
+                        text: status === "Accepted"
+                            ? "Tour has been confirmed."
+                            : "Tour request declined.",
+                        confirmButtonColor: "#00674f"
+                    });
+                    fetchTours();
+                }
+            } catch (err) {
+                Swal.fire("Error", "Failed to update tour status.", "error");
+            }
+        });
     }
 
     // Delete property
@@ -337,6 +394,100 @@ export default function PropertiesPage() {
                 </div>
             </div>
 
+            {/* ============================================
+            🚀 NEW SECTION — PROPERTY TOUR MANAGER
+            ============================================ */}
+            <div className="card mt-24">
+                <div className="card-body">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold">Scheduled Property Tours</h3>
+
+                        {/* Filter */}
+                        <select
+                            value={tourFilter}
+                            onChange={(e) => setTourFilter(e.target.value)}
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white shadow-sm hover:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
+                        >
+                            <option value="All">All</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Accepted">Accepted</option>
+                            <option value="Declined">Declined</option>
+                        </select>
+                    </div>
+
+                    {/* If empty */}
+                    {tours.length === 0 ? (
+                        <p className="text-gray-600">No tour requests found.</p>
+                    ) : (
+                        <div className="table-wrap">
+                            <table className="table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Buyer</th>
+                                        <th>Contact</th>
+                                        <th>Property</th>
+                                        <th>Tour Type</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    {tours.map((t) => (
+                                        <tr key={t.id}>
+                                            <td>
+                                                {t.preferred_date} <br />
+                                                <span className="text-sm text-gray-500">{t.preferred_time}</span>
+                                            </td>
+                                            <td>{t.buyer_name}</td>
+                                            <td>
+                                                <div>{t.buyer_email}</div>
+                                                <div className="text-sm text-gray-500">{t.buyer_phone}</div>
+                                            </td>
+                                            <td>{t.title}</td>
+                                            <td>{t.tour_type}</td>
+
+                                            <td>
+                                                <span
+                                                    className={`badge ${t.status === "Pending"
+                                                            ? "badge-warning"
+                                                            : t.status === "Accepted"
+                                                                ? "badge-success"
+                                                                : "badge-muted"
+                                                        }`}
+                                                >
+                                                    {t.status}
+                                                </span>
+                                            </td>
+
+                                            <td className="flex gap-2">
+                                                {t.status === "Pending" && (
+                                                    <>
+                                                        <button
+                                                            className="btn btn-outline text-xs"
+                                                            onClick={() => handleTourStatusUpdate(t, "Accepted")}
+                                                        >
+                                                            Accept
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-danger text-xs"
+                                                            onClick={() => handleTourStatusUpdate(t, "Declined")}
+                                                        >
+                                                            Decline
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </td>
+
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </div>
             {/* === Explore Insights === */}
             <div className="card mt-24">
                 <div className="card-body">
