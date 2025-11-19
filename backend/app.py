@@ -4069,11 +4069,6 @@ from datetime import datetime, timezone
 @app.get("/api/my/announcements")
 @auth_required
 def my_announcements():
-    """
-    Returns active web announcements targeted at the current user,
-    excluding ones they've dismissed.
-    Also ensures a user_announcements row exists (delivered_at) for each.
-    """
     user = request.user
     user_id = user["id"]
     role = str(user.get("role", "")).lower()
@@ -4101,19 +4096,25 @@ def my_announcements():
             WHERE a.channel_web = TRUE
               AND (a.starts_at IS NULL OR a.starts_at <= %s)
               AND (a.ends_at   IS NULL OR a.ends_at   >= %s)
-              AND (ua.dismissed_at IS NULL)        -- don't return dismissed ones
+              AND (ua.dismissed_at IS NULL)
               AND (
-                    t.announcement_id IS NULL      -- everyone
-                    OR t.role_in IS NULL           -- no role filter
-                    OR %s = ANY(t.role_in)         -- this role targeted
+                    -- global announcement (no targeting row at all)
+                    t.announcement_id IS NULL
+
+                    -- role targeting (role must be in array)
+                    OR (%s = ANY(t.role_in))
+
+                    -- direct user targeting
+                    OR (%s = ANY(t.include_user_ids))
                   )
             ORDER BY a.created_at DESC
             """,
-            [user_id, now, now, role],
+            [user_id, now, now, role, user_id],
         )
+
         rows = cur.fetchall()
 
-        # ensure delivered_at row exists per announcement/user
+        # ensure delivered_at exists
         for r in rows:
             cur.execute(
                 """
@@ -4124,8 +4125,7 @@ def my_announcements():
                 [r["id"], user_id],
             )
 
-    # Standardised object so we can reuse on frontend as "notifications"
-    payload = [
+    return jsonify([
         {
             "id": r["id"],
             "title": r["title"],
@@ -4135,10 +4135,7 @@ def my_announcements():
             "dismissed_at": r["dismissed_at"],
         }
         for r in rows
-    ]
-    return jsonify(payload)
-
-
+    ])
 
 # --- Stripe (payment service) checkout ---
 @app.post("/api/payments/checkout")
@@ -4557,7 +4554,7 @@ def create_tour():
 
     property_id = body.get("property_id")
     agent_id = body.get("agent_id")
-    user_id = body.get("user_id")
+    user_id = body.get("user_id")          # buyer
     preferred_date = body.get("preferred_date")
     preferred_time = body.get("preferred_time")
     tour_type = body.get("tour_type") or "In-Person"
@@ -4565,7 +4562,7 @@ def create_tour():
 
     with get_cursor_cm() as cur:
 
-        # 1️⃣ Create tour request
+        # 1️⃣ Create tour record
         cur.execute("""
             INSERT INTO property_tours (
                 property_id, agent_id, user_id,
@@ -4579,63 +4576,68 @@ def create_tour():
             preferred_date, preferred_time,
             tour_type, message,
         ])
-        tour_id = cur.fetchone()["id"]     # ✔ FIXED
+        tour_id = cur.fetchone()["id"]
 
-        # Fetch property + buyer
+        # Fetch property
         cur.execute("SELECT title, location FROM properties WHERE id = %s", [property_id])
         prop = cur.fetchone()
 
+        # Fetch buyer info
         cur.execute("SELECT name FROM users WHERE id = %s", [user_id])
         buyer = cur.fetchone()
 
-        # 2️⃣ Announcement for AGENT
+        # 2️⃣ Announcement → AGENT
         cur.execute("""
             INSERT INTO announcements
-                (title, body_md, kind, channel_web, channel_email, priority, status)
+                (title, body_md, kind, channel_web, channel_email, priority, status, created_by)
             VALUES
-                (%s, %s, 'general', TRUE, FALSE, 0, 'active')
+                (%s, %s, 'general', TRUE, FALSE, 0, 'active', %s)
             RETURNING id;
         """, [
             f"New Tour Request – {prop['title']}",
             f"""
-🗓 {preferred_date} at {preferred_time}  
-👤 Buyer: {buyer['name']}  
-🏡 {prop['title']}  
-📍 {prop['location']}  
-"""
+🗓 {preferred_date} at {preferred_time}
+👤 Buyer: {buyer['name']}
+🏡 {prop['title']}
+📍 {prop['location']}
+""",
+            user_id    # BUYER created this request
         ])
-        ann_agent_id = cur.fetchone()["id"]     # ✔ FIXED
+        ann_agent_id = cur.fetchone()["id"]
 
-        # Assign to AGENT ONLY
+        # Assign to AGENT only
         cur.execute("""
             INSERT INTO announcement_targets (announcement_id, include_user_ids)
             VALUES (%s, %s)
         """, [ann_agent_id, [agent_id]])
 
-        # 3️⃣ Announcement for BUYER
+        # 3️⃣ Announcement → BUYER
         cur.execute("""
             INSERT INTO announcements
-                (title, body_md, kind, channel_web, channel_email, priority, status)
+                (title, body_md, kind, channel_web, channel_email, priority, status, created_by)
             VALUES
-                (%s, %s, 'general', TRUE, FALSE, 0, 'active')
+                (%s, %s, 'general', TRUE, FALSE, 0, 'active', %s)
             RETURNING id;
         """, [
             "Your Tour Request Has Been Sent",
             f"""
 You requested a viewing for **{prop['title']}**.
-🗓 {preferred_date} at {preferred_time}  
+🗓 {preferred_date} at {preferred_time}
 Type: {tour_type}
-"""
+""",
+            agent_id   # AGENT is the source of this system message
         ])
-        ann_buyer_id = cur.fetchone()["id"]    # ✔ FIXED
+        ann_buyer_id = cur.fetchone()["id"]
 
-        # Assign to BUYER ONLY
+        # Assign to BUYER only
         cur.execute("""
             INSERT INTO announcement_targets (announcement_id, include_user_ids)
             VALUES (%s, %s)
         """, [ann_buyer_id, [user_id]])
 
     return jsonify({"ok": True, "tour_id": tour_id})
+
+
 
 # --- Update tour status (Accept/Decline) ---
 @app.patch("/api/tours/<int:tour_id>")
@@ -4645,7 +4647,7 @@ def update_tour_status(tour_id):
 
     with get_cursor_cm() as cur:
 
-        # Get the tour
+        # Fetch tour
         cur.execute("SELECT * FROM property_tours WHERE id = %s", [tour_id])
         tour = cur.fetchone()
         if not tour:
@@ -4658,37 +4660,41 @@ def update_tour_status(tour_id):
             WHERE id = %s
         """, [status, tour_id])
 
-        # Get property
+        # Fetch property
         cur.execute("SELECT title FROM properties WHERE id = %s",
             [tour["property_id"]])
         prop = cur.fetchone()
 
+        # Buyer message
         ann_title = f"Tour {status} – {prop['title']}"
         ann_body = (
             "🎉 Your tour request has been accepted! The agent will meet you as scheduled."
             if status == "Accepted"
-            else "❌ The agent has declined your requested timing. You may request a new one."
+            else "❌ The agent has declined your requested timing."
         )
 
-        # --- FIXED INSERT ---
+        # Create announcement (created by AGENT)
         cur.execute("""
             INSERT INTO announcements
                 (title, body_md, kind, channel_web, channel_email, priority, status, created_by)
             VALUES
                 (%s, %s, 'general', TRUE, FALSE, 0, 'active', %s)
             RETURNING id;
-        """, [ann_title, ann_body, tour["agent_id"]])
-        
+        """, [
+            ann_title,
+            ann_body,
+            tour["agent_id"]      # AGENT performed the action
+        ])
+
         ann_id = cur.fetchone()["id"]
 
-        # --- Target only buyer ---
+        # Only BUYER receives this
         cur.execute("""
             INSERT INTO announcement_targets (announcement_id, include_user_ids)
             VALUES (%s, %s)
         """, [ann_id, [tour["user_id"]]])
 
     return jsonify({"ok": True})
-
 
 # --- Get tours for a specific agent ---
 @app.get("/api/tours/agent/<int:agent_id>")
@@ -4730,9 +4736,6 @@ def get_agent_tours(agent_id):
 
     rows = query_all(query, params)
     return jsonify({"ok": True, "tours": rows})
-
-
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
