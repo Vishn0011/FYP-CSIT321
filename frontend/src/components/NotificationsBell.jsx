@@ -23,9 +23,7 @@ export default function NotificationsBell() {
                 const list = Array.isArray(res.data) ? res.data : [];
                 setItems(list);
             } catch (err) {
-                if (!cancelled) {
-                    console.error("Failed to load announcements for bell", err);
-                }
+                if (err.response?.status === 401) return;
             } finally {
                 if (!cancelled) setLoading(false);
             }

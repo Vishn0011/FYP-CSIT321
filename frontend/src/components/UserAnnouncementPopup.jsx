@@ -28,8 +28,11 @@ export default function UserAnnouncementPopup() {
           }
         }
       } catch (err) {
-        console.error("Failed to load my announcements", err);
-        if (!cancelled) setLoading(false);
+        if (err.response?.status === 401) {
+          setAnnouncement(null);
+          return;
+        }
+        console.error(err);
       }
     }
 
