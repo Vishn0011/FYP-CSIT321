@@ -35,6 +35,8 @@ from pathlib import Path
 load_dotenv()
 app = Flask(__name__)
 
+app.register_blueprint(users_bp)
+
 BASE_DIR = Path(__file__).resolve().parent
 geo_bp = Blueprint("geo", __name__)
 GOOGLE_API_KEY = "AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw"
@@ -693,10 +695,10 @@ def update_password():
     return jsonify({"ok": True})
 
 # ---------- USERS ----------
-@app.get("/api/users")
-def list_users():
-    rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
-    return jsonify(rows)
+#@app.get("/api/users")
+#def list_users():
+#    rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
+#    return jsonify(rows)
 
 @app.get("/api/users/pending")
 def get_pending_users():
