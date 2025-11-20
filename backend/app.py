@@ -34,6 +34,8 @@ from pathlib import Path
 load_dotenv()
 app = Flask(__name__)
 
+app.register_blueprint(users_bp)
+
 BASE_DIR = Path(__file__).resolve().parent
 geo_bp = Blueprint("geo", __name__)
 GOOGLE_API_KEY = "AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw"
@@ -692,10 +694,10 @@ def update_password():
     return jsonify({"ok": True})
 
 # ---------- USERS ----------
-@app.get("/api/users")
-def list_users():
-    rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
-    return jsonify(rows)
+#@app.get("/api/users")
+#def list_users():
+#    rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
+#    return jsonify(rows)
 
 @app.get("/api/users/pending")
 def get_pending_users():
@@ -844,41 +846,93 @@ def approve_property(prop_id):
 
 # List all active properties (public marketplace view)
 # Called by: AllPropertiesPage.js
+
 @app.get("/api/properties/all")
 def list_all_public_properties():
-    """
-    Gets all properties that are marked as 'Active' for the public marketplace.
-    """
-    
-    # --- Following the style of your /api/properties endpoint ---
-    query = """
-        SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
-               size, location, photos, status, created_at, updated_at
+    try:
+        page = int(request.args.get("page", "1"))
+    except ValueError:
+        page = 1
+    try:
+        page_size = int(request.args.get("page_size", "20"))
+    except ValueError:
+        page_size = 20
+
+    page = max(1, page)
+    page_size = max(1, min(page_size, 50))  # hard cap
+
+    offset = (page - 1) * page_size
+
+    base_sql = """
         FROM properties
-        WHERE 1=1
+        WHERE status = %s AND is_deleted = FALSE
     """
-    params = []
 
-    # Hard-code the 'Active' status for this public endpoint
-    query += " AND status = %s"
-    params.append('Active')
+    # total count
+    total_row = query_one(f"SELECT COUNT(*)::int AS total {base_sql}", ["Active"])
+    total = total_row["total"] if total_row else 0
 
-    query += " ORDER BY created_at DESC"
-    
-    # Call query_all with *both* arguments, just like your working function
-    rows = query_all(query, params)
-    
-    # --- Add back your JSON processing for photos ---
-    processed_rows = []
+    rows = query_all(
+        f"""
+        SELECT id, agent_id, title, property_type, price, bedrooms, bathrooms,
+               size, location, photos, created_at
+        {base_sql}
+        ORDER BY created_at DESC
+        LIMIT %s OFFSET %s
+        """,
+        ["Active", page_size, offset],
+    )
+
+    # parse photos minimally (e.g. only first image)
     for row in rows:
-        if 'photos' in row and isinstance(row['photos'], str):
+        photos = row.get("photos")
+        if isinstance(photos, str):
             try:
-                row['photos'] = json.loads(row['photos'])
+                arr = json.loads(photos)
+                row["photos"] = arr[:1]  # only thumbnail
             except json.JSONDecodeError:
-                row['photos'] = [] # Default to empty list if parsing fails
-        processed_rows.append(row)
+                row["photos"] = []
 
-    return jsonify(processed_rows)
+    return jsonify({"data": rows, "page": page, "page_size": page_size, "total": total})
+
+
+# @app.get("/api/properties/all")
+# def list_all_public_properties():
+#     """
+#     Gets all properties that are marked as 'Active' for the public marketplace.
+#     """
+    
+#     # --- Following the style of your /api/properties endpoint ---
+#     query = """
+#         SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
+#                size, location, photos, status, created_at, updated_at
+#         FROM properties
+#         WHERE 1=1
+#     """
+#     params = []
+
+#     # Hard-code the 'Active' status for this public endpoint
+#     query += " AND status = %s"
+#     params.append('Active')
+
+#     query += " ORDER BY created_at DESC"
+    
+#     # Call query_all with *both* arguments, just like your working function
+#     rows = query_all(query, params)
+    
+#     # --- Add back your JSON processing for photos ---
+#     processed_rows = []
+#     for row in rows:
+#         if 'photos' in row and isinstance(row['photos'], str):
+#             try:
+#                 row['photos'] = json.loads(row['photos'])
+#             except json.JSONDecodeError:
+#                 row['photos'] = [] # Default to empty list if parsing fails
+#         processed_rows.append(row)
+
+#     return jsonify(processed_rows)
+
+
 
 
 # === 2. PUBLIC: Get ONE Active Property by ID ===

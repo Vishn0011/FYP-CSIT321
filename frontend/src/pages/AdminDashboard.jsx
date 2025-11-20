@@ -512,7 +512,7 @@ export default function AdminDashboard() {
                         {/* Subscribe Page Settings */}
                         <Section
                             title="Subscribe Page Settings"
-                            onViewAll={() => {}}
+                            onViewAll={() => { }}
                         >
                             <ManagePaymentPage />
                         </Section>
@@ -520,7 +520,7 @@ export default function AdminDashboard() {
                         {/* Subscription Plans */}
                         <Section
                             title="Subscription Plans"
-                            onViewAll={() => {}}
+                            onViewAll={() => { }}
                         >
                             <ManagePlans />
                         </Section>
@@ -771,8 +771,12 @@ function ManagePaymentPage() {
 
     function handleChange(e) {
         const { name, value } = e.target;
-        setForm((f) => ({ ...f, [name]: value }));
+        setForm((f) => ({
+            ...f,
+            [name]: value,
+        }));
     }
+
 
     // 2) Save changes (this will update the DB via your PUT endpoint)
     async function handleSave(e) {
@@ -1033,11 +1037,10 @@ function ManagePlans() {
                                 </td>
                                 <td className="p-2">
                                     <span
-                                        className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                                            plan.is_active
-                                                ? "bg-green-100 text-green-700"
-                                                : "bg-red-100 text-red-700"
-                                        }`}
+                                        className={`px-2 py-1 text-xs font-semibold rounded-full ${plan.is_active
+                                            ? "bg-green-100 text-green-700"
+                                            : "bg-red-100 text-red-700"
+                                            }`}
                                     >
                                         {plan.is_active ? "Active" : "Inactive"}
                                     </span>

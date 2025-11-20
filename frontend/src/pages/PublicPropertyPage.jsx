@@ -37,8 +37,14 @@ export default function PublicPropertyPage() {
         message: ""
     });
 
-    const handleFormChange = (e) =>
-        setForm({ ...form, [e.target.name]: e.target.value });
+    const handleFormChange = (e) => {
+        const { name, value } = e.target;
+        setForm((prev) => ({
+            ...prev,
+            [name]: value,
+        }));
+    };
+
 
     const storedUser = localStorage.getItem("user");
     const user = storedUser ? JSON.parse(storedUser) : null;
@@ -178,7 +184,10 @@ export default function PublicPropertyPage() {
     };
 
     const handleRatingClick = (value) => {
-        setFeedbackForm((prev) => ({ ...prev, rating: value }));
+        setFeedbackForm((prev) => ({
+            ...prev,
+            rating: value,
+        }));
     };
 
     const handleFeedbackSubmit = async (e) => {
@@ -233,13 +242,18 @@ export default function PublicPropertyPage() {
             setFeedbackItems((prev) => {
                 if (!saved) return prev;
                 const idx = prev.findIndex((f) => f.id === saved.id);
+
+                // If it's a brand new review, prepend it
                 if (idx === -1) {
                     return [saved, ...prev];
                 }
+
+                // Otherwise replace existing
                 const copy = [...prev];
                 copy[idx] = saved;
                 return copy;
             });
+
         } catch (err) {
             console.error("Failed to submit feedback", err);
             Swal.fire({
@@ -495,7 +509,7 @@ export default function PublicPropertyPage() {
                                 </p>
                             )}
                         </div>
-                    </div> 
+                    </div>
 
                     {/* --- 🔒 AI Insights Section --- */}
                     {!isAuthenticated ? (
