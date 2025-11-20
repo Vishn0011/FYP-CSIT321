@@ -29,7 +29,6 @@ import stripe
 from decimal import Decimal
 import requests
 from datetime import datetime, timezone
-
 from pathlib import Path
 
 load_dotenv()
@@ -780,6 +779,34 @@ def update_feature(fid):
 def delete_feature(fid):
     execute("DELETE FROM features WHERE id=%s", [fid])
     return jsonify({"deleted": fid})
+
+# 1. PUBLIC: Get only ACTIVE videos for the homepage
+@app.get("/api/homepage-videos")
+def public_homepage_videos():
+    # Only select ones marked TRUE
+    rows = query_all("SELECT file_name FROM homepage_videos WHERE is_active = TRUE")
+    # Return a simple list of filenames: ['welcome-agent.mp4', 'welcome-homeowner.mp4']
+    return jsonify([r['file_name'] for r in rows])
+
+# 2. ADMIN: Get ALL videos (so you can see what to enable/disable)
+@app.get("/api/admin/homepage-videos")
+def admin_homepage_videos():
+    rows = query_all("SELECT * FROM homepage_videos ORDER BY id ASC")
+    return jsonify(rows)
+
+# 3. ADMIN: Toggle status
+@app.post("/api/admin/homepage-videos/toggle")
+def admin_toggle_homepage_video():
+    data = request.get_json(force=True)
+    vid_id = data["id"]
+    # We set it to whatever the frontend sent us (true/false)
+    new_status = data["is_active"] 
+
+    execute(
+        "UPDATE homepage_videos SET is_active = %s WHERE id = %s",
+        [new_status, vid_id]
+    )
+    return jsonify({"ok": True})
 
 #show in dashboard recent pending properties for admin
 @app.get("/api/properties/recent")

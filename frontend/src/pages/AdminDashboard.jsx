@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import ManageFeatures from "./ManageFeatures";
 import axios from "axios";
+import ManageHomepageVideos from "./ManageHomePageVideos";
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
@@ -25,11 +26,6 @@ export default function AdminDashboard() {
     const [announcements, setAnnouncements] = useState([]);
     const [annLoading, setAnnLoading] = useState(true);
     const [annErr, setAnnErr] = useState("");
-
-
-
-
-
 
     useEffect(() => {
         async function fetchAnnouncements() {
@@ -506,7 +502,13 @@ export default function AdminDashboard() {
                         >
                             <ManageFeatures />
                         </Section>
-
+                        {/* Manage Homepage Videos */}
+                        <Section
+                            title="Manage Homepage Videos"
+                            onViewAll={() => navigate("/admin/homepage-videos")}
+                        >
+                            <ManageHomepageVideos />
+                        </Section>
                         {/* Subscribe Page Settings */}
                         <Section
                             title="Subscribe Page Settings"

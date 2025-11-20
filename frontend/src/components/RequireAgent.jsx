@@ -17,9 +17,5 @@ export default function RequireAgent({ children }) {
         return <Navigate to="/unauthorized" replace />;
     }
 
-    if (!hasSeenWelcome(user.role) && location.pathname !== "/welcome") {
-        return <Navigate to="/welcome" replace state={{ from: location.pathname }} />;
-    }
-
     return children;
 }

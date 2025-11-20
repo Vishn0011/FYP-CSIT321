@@ -22,9 +22,5 @@ export default function RequireHomebuyer({ children }) {
         return <Navigate to="/" replace />;
     }
 
-    if (!hasSeenWelcome(user.role) && location.pathname !== "/welcome") {
-        return <Navigate to="/welcome" replace state={{ from: location.pathname }} />;
-    }
-
     return children;
 }

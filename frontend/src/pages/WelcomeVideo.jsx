@@ -1,91 +1,51 @@
-import { useEffect, useMemo } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../AuthContext";
-import "../components/css/PropertiesPage.css";
-
-const VIDEO_SOURCES = {
-  agent: "/media/welcome-agent.mp4", // TODO: replace with real agent video path
-  homeowner: "/media/welcome-homeowner.mp4", // TODO: replace with real homeowner video path
-};
-
-const getSeenKey = (role) => `welcome_seen:${role || "unknown"}`;
+﻿import { useEffect, useState } from "react";
+import api from "../api";
+import "../components/css/WelcomeVideoBackground.css"; // Your CSS file
 
 export default function WelcomeVideo() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+    const [videos, setVideos] = useState([]);
+    const [index, setIndex] = useState(0);
 
-  const role = user?.role || "unknown";
-  const from = location.state?.from;
+    // 1. Fetch the list of active filenames
+    useEffect(() => {
+        api.get("/homepage-videos")
+            .then(res => setVideos(res.data || []))
+            .catch(err => console.error("Failed to load videos", err));
+    }, []);
 
-  const targetPath = useMemo(() => {
-    if (from) return from;
-    if (role === "agent") return "/properties";
-    if (role === "homeowner") return "/homeowner/search";
-    return "/dashboard";
-  }, [from, role]);
+    // 2. Rotation Logic (Kept exactly as you requested)
+    useEffect(() => {
+        if (videos.length <= 1) return;
 
-  useEffect(() => {
-    if (!user) {
-      navigate("/login", { replace: true });
-      return;
-    }
-    const seen = sessionStorage.getItem(getSeenKey(role)) === "1";
-    if (seen) {
-      navigate(targetPath, { replace: true });
-    }
-  }, [navigate, role, targetPath, user]);
+        const timer = setInterval(() => {
+            setIndex(prev => (prev + 1) % videos.length);
+        }, 12000); // 12 Seconds
 
-  if (!user) return null;
+        return () => clearInterval(timer);
+    }, [videos]);
 
-  const markSeenAndContinue = () => {
-    sessionStorage.setItem(getSeenKey(role), "1");
-    navigate(targetPath, { replace: true });
-  };
+    // If no videos are active, don't render anything
+    if (videos.length === 0) return null;
 
-  const src = VIDEO_SOURCES[role] || VIDEO_SOURCES.homeowner;
+    // --- FIX EXPLANATION ---
+    // The API returns: ["welcome-agent.mp4", "welcome-homeowner.mp4"]
+    // So 'current' is already the string. We don't need .file_name here.
+    const current = videos[index];
+    const src = `/media/${current}`;
 
-  return (
-    <div className="welcome-video">
-      <div className="welcome-video__card">
-        <div className="welcome-video__header">
-          <div>
-            <p className="welcome-video__eyebrow">Welcome back</p>
-            <h1 className="welcome-video__title">
-              {role === "agent"
-                ? "A quick intro for agents"
-                : "A quick intro for homebuyers"}
-            </h1>
-            <p className="welcome-video__subtitle">
-              Watch this short clip to learn what’s new. You can skip anytime.
-            </p>
-          </div>
-          <button type="button" className="welcome-video__skip" onClick={markSeenAndContinue}>
-            Skip
-          </button>
+    return (
+        <div className="welcome-bg">
+            <video
+                key={src} // Forces React to re-mount the video when source changes
+                className="welcome-bg-video" // Applies your blur & brightness CSS
+                src={src}
+                autoPlay
+                muted
+                loop
+                playsInline // Essential for iPhones/Macs to autoplay
+            />
+            {/* Your overlay CSS handles the gradient */}
+            <div className="welcome-bg-overlay" />
         </div>
-
-        <div className="welcome-video__player">
-          <video
-            src={src}
-            controls
-            autoPlay
-            onEnded={markSeenAndContinue}
-            style={{ width: "100%", borderRadius: 16, background: "#000" }}
-          >
-            Your browser does not support the video tag.
-          </video>
-        </div>
-
-        <div className="welcome-video__actions">
-          <button type="button" className="welcome-video__primary" onClick={markSeenAndContinue}>
-            Continue to dashboard
-          </button>
-          <button type="button" className="welcome-video__secondary" onClick={markSeenAndContinue}>
-            Skip video
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -69,7 +69,7 @@ export default function ManageFeatures() {
             )}
 
             {loading ? (
-                <div className="text-sm text-gray-500">Loading�K</div>
+                <div className="text-sm text-gray-500">Loading</div>
             ) : err ? (
                 <div className="text-sm text-red-600">{err}</div>
             ) : (
