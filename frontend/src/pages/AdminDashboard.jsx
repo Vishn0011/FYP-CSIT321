@@ -163,14 +163,14 @@ export default function AdminDashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
             <main className="flex-1">
                 <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
                     <div className="mb-8">
-                        <h1 className="text-3xl font-bold text-gray-800">
+                        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
                             Admin Dashboard
                         </h1>
-                        <p className="text-gray-500 mt-1">
+                        <p className="text-gray-500 dark:text-gray-400 mt-1">
                             An overview of the key activities and metrics on
                             AgentPro.
                         </p>
@@ -225,35 +225,32 @@ export default function AdminDashboard() {
                                 </div>
                             ) : (
                                 <table className="w-full text-left">
-                                    <thead className="border-b border-gray-200">
+                                    <thead className="border-b border-gray-200 dark:border-gray-700">
                                         <tr>
-                                            <th className="p-3 font-semibold text-gray-500">
+                                            <th className="p-3 font-semibold text-gray-500 dark:text-gray-400">
                                                 Name
                                             </th>
-                                            <th className="p-3 font-semibold text-gray-500">
+                                            <th className="p-3 font-semibold text-gray-500 dark:text-gray-400">
                                                 Email
                                             </th>
-                                            <th className="p-3 font-semibold text-gray-500">
+                                            <th className="p-3 font-semibold text-gray-500 dark:text-gray-400">
                                                 Role
                                             </th>
-                                            <th className="p-3 font-semibold text-gray-500">
+                                            <th className="p-3 font-semibold text-gray-500 dark:text-gray-400">
                                                 Status
                                             </th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {stats.recent.map((u) => (
-                                            <tr
-                                                key={u.id}
-                                                className="border-b hover:bg-gray-50"
-                                            >
-                                                <td className="p-3">
+                                            <tr key = { u.id } className = "border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" >
+                                                <td className="p-3 text-gray-800 dark:text-gray-200">
                                                     {u.name || "—"}
                                                 </td>
-                                                <td className="p-3 text-gray-500">
+                                                <td className="p-3 text-gray-500 dark:text-gray-400">
                                                     {u.email}
                                                 </td>
-                                                <td className="p-3 capitalize">
+                                                <td className="p-3 capitalize text-gray-800 dark:text-gray-200">
                                                     {u.role || "user"}
                                                 </td>
                                                 <td className="p-3">

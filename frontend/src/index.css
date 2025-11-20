@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
 
@@ -8,7 +8,38 @@
 :root { --font-sans: "Work Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
 html, body, #root { height: 100%; }
 body { margin: 0; font-family: var(--font-sans); background: #f9fafb; color: #111827; }
+@layer components {
+    /* 1. Force all white backgrounds to turn Dark Gray in dark mode */
+    .dark .bg-white {
+        background-color: #1f2937 !important; /* gray-800 */
+        border-color: #374151 !important; /* gray-700 */
+        color: #e5e7eb !important; /* gray-200 (Text color inside cards) */
+    }
 
+    /* 2. Force main page background to Darker Gray */
+    .dark .bg-gray-50 {
+        background-color: #111827 !important; /* gray-900 */
+    }
+
+    /* 3. Invert common text colors */
+    .dark .text-gray-800,
+    .dark .text-gray-700,
+    .dark .text-gray-600,
+    .dark .text-gray-500 {
+        color: #f3f4f6 !important; /* gray-100 */
+    }
+
+    /* 4. Fix borders to be subtle in dark mode */
+    .dark .border-gray-100,
+    .dark .border-gray-200 {
+        border-color: #374151 !important; /* gray-700 */
+    }
+
+    /* 5. Fix table hover effects */
+    .dark .hover\:bg-gray-50:hover {
+        background-color: #374151 !important; /* gray-700 */
+    }
+}
 .nav {
     position: sticky;
     top: 0;
