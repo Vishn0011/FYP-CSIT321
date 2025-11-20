@@ -15,6 +15,7 @@ export default function AdminAnnouncementNew() {
   const [content, setContent] = useState("");
   const [selectedRoles, setSelectedRoles] = useState(["admin", "agent", "homeowner"]); // default = everyone
   const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState("");
 
   function toggleRole(role) {
     setSelectedRoles((prev) =>
@@ -42,10 +43,11 @@ export default function AdminAnnouncementNew() {
       await api.post("/admin/announcements", {
         title: title.trim(),
         body_md: content.trim(),
-        roles: selectedRoles,       // 👈 goes into announcement_targets.role_in
+        roles: selectedRoles,
       });
 
-      alert("Announcement created.");
+      setSuccess("Announcement created successfully.");
+      // small delay or just navigate
       nav("/admin/announcements");
     } catch (err) {
       console.error(err);
@@ -66,6 +68,13 @@ export default function AdminAnnouncementNew() {
           <h2 className="mb-6 text-3xl font-bold text-gray-900">
             Create Announcement
           </h2>
+
+          {success && (                                                   // <-- ADD THIS BLOCK
+            <div className="mb-4 rounded-lg border border-emerald-200 
+                  bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              {success}
+            </div>
+          )}
 
           <form
             onSubmit={handleSubmit}
@@ -138,6 +147,7 @@ export default function AdminAnnouncementNew() {
                 to="/admin/announcements"
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
               >
+                Cancel
                 Cancel
               </Link>
             </div>
