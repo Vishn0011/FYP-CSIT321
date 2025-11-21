@@ -335,8 +335,15 @@ MODEL_FEATURES = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 print(f"✅ v12 Model features loaded. Count: {len(MODEL_FEATURES)}")
 
 # Allow frontend (Vite dev server) to call this API in dev
-CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:3000"])
-# CORS(app, supports_credentials=True, origins=[ALLOW_ORIGIN], methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "Authorization"], )
+allowed_origins = {"http://localhost:5173", "http://localhost:3000"}
+if ALLOW_ORIGIN:
+    allowed_origins.add(ALLOW_ORIGIN)
+CORS(
+    app,
+    supports_credentials=True,
+    origins=list(allowed_origins),
+    allow_headers=["Content-Type", "Authorization"],
+)
 
 # --- For Stripe (payment service)
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
