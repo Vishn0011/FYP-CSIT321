@@ -38,30 +38,34 @@ app.register_blueprint(users_bp)
 
 BASE_DIR = Path(__file__).resolve().parent
 geo_bp = Blueprint("geo", __name__)
-GOOGLE_API_KEY = "AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw"
-CLIENT_ID = "98981474983-d5h2shgl18u6oovn378q3ovao61jtbm0.apps.googleusercontent.com"  # same as frontend
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+RECAPTCHA_SECRET = os.getenv("RECAPTCHA_SECRET", "")
 
 def verify_captcha(token):
-    secret = "6LcJcgwsAAAAAOXKQZdUHBysfCfCWyiAAf2IGFZx"
-    url = "https://www.google.com/recaptcha/api/siteverify"
+    """
+    Verify a reCAPTCHA token when credentials are present. Missing credentials
+    trigger a warning so deployments can configure them, but we skip the check
+    to avoid blocking local environments entirely.
+    """
+    if not RECAPTCHA_SECRET:
+        app.logger.warning("reCAPTCHA secret not configured; skipping verification.")
+        return True
 
-    res = requests.post(url, data={"secret": secret, "response": token})
+    if not token:
+        return False
+
+    url = "https://www.google.com/recaptcha/api/siteverify"
+    res = requests.post(url, data={"secret": RECAPTCHA_SECRET, "response": token})
     result = res.json()
 
-    # 1️⃣ Must be technically valid
     if not result.get("success", False):
         return False
 
-    # 2️⃣ Score must be high enough (0.5 recommended)
     score = result.get("score", 0)
     if score < 0.5:
-        print("⚠️ reCAPTCHA score too low:", score)
+        app.logger.warning("reCAPTCHA score too low: %s", score)
         return False
-
-    # 3️⃣ (Optional) Ensure action is correct if you used executeRecaptcha("login_action")
-    # action = result.get("action", "")
-    # if action != "login_action":
-    #     return False
 
     return True
 
@@ -494,6 +498,10 @@ def google_login():
     if not token:
         return jsonify({"error": "missing token"}), 400
 
+    if not CLIENT_ID:
+        app.logger.error("GOOGLE_CLIENT_ID is not configured for OAuth login.")
+        return jsonify({"error": "google_oauth_not_configured"}), 500
+
     try:
         idinfo = id_token.verify_oauth2_token(token, grequests.Request(), CLIENT_ID)
         email = idinfo["email"]
@@ -537,6 +545,10 @@ def google_signup():
         role = (body.get("role") or "homeowner").lower()
 
         # verify Google token
+        if not CLIENT_ID:
+            app.logger.error("GOOGLE_CLIENT_ID is not configured for OAuth signup.")
+            return jsonify({"error": "google_oauth_not_configured"}), 500
+
         idinfo = id_token.verify_oauth2_token(token, grequests.Request(), CLIENT_ID)
         email = idinfo["email"]
         name = idinfo.get("name", "")
@@ -3655,6 +3667,10 @@ def analyze_geo():
     Filters small shops/clinics/playgrounds.
     Returns both name + distance for real amenities.
     """
+    if not GOOGLE_API_KEY:
+        app.logger.error("GOOGLE_API_KEY not configured for geo analysis.")
+        return jsonify({"error": "google_maps_not_configured"}), 500
+
     try:
         body = request.get_json(force=True) or {}
         lat, lng = float(body.get("latitude")), float(body.get("longitude"))

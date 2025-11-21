@@ -4,6 +4,8 @@ import api from "../api";
 import Swal from "sweetalert2";
 import "./css/addProperties.css";
 
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+
 export default function EditProperty() {
     const navigate = useNavigate();
     const { id } = useParams();
@@ -831,7 +833,7 @@ export default function EditProperty() {
                                 <>
                                     <h4 className="section-label">🗺️ Map Preview</h4>
                                     <img
-                                        src={`https://maps.googleapis.com/maps/api/staticmap?center=${form.latitude},${form.longitude}&zoom=16&size=600x300&markers=color:red|${form.latitude},${form.longitude}&key=AIzaSyDy__k7VDO7MsNhVovVpcKWHxQM14byQyw`}
+                                        src={`https://maps.googleapis.com/maps/api/staticmap?center=${form.latitude},${form.longitude}&zoom=16&size=600x300&markers=color:red|${form.latitude},${form.longitude}&key=${GOOGLE_MAPS_API_KEY}`}
                                         alt="Map preview"
                                         className="rounded-xl shadow mb-6"
                                     />

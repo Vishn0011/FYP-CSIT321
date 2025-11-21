@@ -7,8 +7,17 @@ import "./index.css";
 import App from "./App.jsx";
 
 const GOOGLE_CLIENT_ID =
-  "98981474983-d5h2shgl18u6oovn378q3ovao61jtbm0.apps.googleusercontent.com";
-const RECAPTCHA_SITE_KEY = "6LcJcgwsAAAAACAsXepETMZebE5gYcCLjp-Z_5pC";
+  import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const RECAPTCHA_SITE_KEY =
+  import.meta.env.VITE_RECAPTCHA_SITE_KEY || "";
+
+if (!GOOGLE_CLIENT_ID) {
+  console.warn("VITE_GOOGLE_CLIENT_ID is not set. Google login will be disabled.");
+}
+
+if (!RECAPTCHA_SITE_KEY) {
+  console.warn("VITE_RECAPTCHA_SITE_KEY is not set. reCAPTCHA will be disabled.");
+}
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
