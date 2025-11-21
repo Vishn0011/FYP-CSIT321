@@ -37,6 +37,7 @@ const PRICE_MAX = 5_000_000;
 const PRICE_STEP = 50_000;
 const PRICE_RANGE = PRICE_MAX - PRICE_MIN;
 const SEARCH_DEFAULT_LIMIT = 20;
+const SUGGESTION_LIMIT = 8;
 const PRICE_PRESETS = [
   { label: "Under $500k", min: PRICE_MIN, max: 500_000 },
   { label: "$500k - $1M", min: 500_000, max: 1_000_000 },
@@ -91,6 +92,21 @@ const normalizeBedroomValue = (value) =>
 
 const getPrefPromptStorageKey = (userId) =>
   userId ? `homeowner-pref-prompt-dismissed:${userId}` : null;
+
+const prioritizeWithPreferences = (list = [], prefs = {}) => {
+  const preferredLocations = prefs?.locations || [];
+  if (!preferredLocations.length) return list;
+  return [...list].sort((a, b) => {
+    const aPref = preferredLocations.some((loc) =>
+      String(a || "").toLowerCase().includes(loc.toLowerCase())
+    );
+    const bPref = preferredLocations.some((loc) =>
+      String(b || "").toLowerCase().includes(loc.toLowerCase())
+    );
+    if (aPref === bPref) return 0;
+    return aPref ? -1 : 1;
+  });
+};
 
 const getPrimaryPhoto = (photos) => {
   if (!photos) return null;
@@ -206,12 +222,14 @@ export default function HomebuyerSearch() {
     const handle = window.setTimeout(async () => {
       try {
         const { data } = await api.get("/homeowner/properties/suggest", {
-          params: { q: term, limit: 6 },
+          params: { q: term, limit: SUGGESTION_LIMIT },
           signal: controller.signal,
         });
+        const titles = prioritizeWithPreferences(data?.titles || [], preferences);
+        const locations = prioritizeWithPreferences(data?.locations || [], preferences);
         setSearchSuggestions({
-          titles: data?.titles || [],
-          locations: data?.locations || [],
+          titles,
+          locations,
         });
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -224,7 +242,7 @@ export default function HomebuyerSearch() {
       controller.abort();
       window.clearTimeout(handle);
     };
-  }, [q, searchFocused, user]);
+  }, [q, searchFocused, user, preferences]);
 
   // --- Suggestions: location box ---
   useEffect(() => {
@@ -243,10 +261,11 @@ export default function HomebuyerSearch() {
     const handle = window.setTimeout(async () => {
       try {
         const { data } = await api.get("/homeowner/properties/suggest", {
-          params: { location: term, limit: 6 },
+          params: { location: term, limit: SUGGESTION_LIMIT },
           signal: controller.signal,
         });
-        setLocationSuggestions(data?.locations || []);
+        const sortedLocations = prioritizeWithPreferences(data?.locations || [], preferences);
+        setLocationSuggestions(sortedLocations);
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error("Failed to fetch location suggestions", error);
@@ -258,7 +277,7 @@ export default function HomebuyerSearch() {
       controller.abort();
       window.clearTimeout(handle);
     };
-  }, [location, locationFocused, user]);
+  }, [location, locationFocused, user, preferences]);
 
   const refreshSaved = useCallback(async () => {
     try {
@@ -897,7 +916,7 @@ export default function HomebuyerSearch() {
                           ))}
                         </div>
                       )}
-                      {searchSuggestions?.locations?.length > 0 && (
+					          {searchSuggestions?.locations?.length > 0 && (
                         <div className="autocomplete__section">
                           <p className="autocomplete__label">Locations</p>
                           {searchSuggestions.locations.map((item) => (
