@@ -342,8 +342,16 @@ if ALLOW_ORIGIN:
 @app.after_request
 def add_cors_headers(response):
     origin = request.headers.get("Origin")
-    if origin in allowed_origins:
-        response.headers["Access-Control-Allow-Origin"] = origin
+    app.logger.debug("CORS origin header: %s", origin)
+
+    allowed_value = None
+    if origin and origin in allowed_origins:
+        allowed_value = origin
+    elif ALLOW_ORIGIN:
+        allowed_value = ALLOW_ORIGIN
+
+    if allowed_value:
+        response.headers["Access-Control-Allow-Origin"] = allowed_value
         response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = (
