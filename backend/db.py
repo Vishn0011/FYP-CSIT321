@@ -4,18 +4,27 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from contextlib import contextmanager
 
+# Load .env for local dev; on Render, real env vars override this
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    # Fail fast so we don't silently try to connect to local /var/run/postgresql
+    raise RuntimeError(
+        "DATABASE_URL is not set. "
+        "Set it in Render's Environment tab to your RDS URL."
+    )
 
 
 def get_conn():
     """Return a raw psycopg2 connection or None if it fails."""
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        # RDS wants SSL; URL can also contain ?sslmode=require, that's fine
+        conn = psycopg2.connect(DATABASE_URL, sslmode="require")
         return conn
     except Exception as e:
-        print("❌ Database connection error:", e)
+        print(" Database connection error:", e)
         return None
 
 
@@ -32,7 +41,7 @@ def get_cursor():
         cur = conn.cursor(cursor_factory=RealDictCursor)
         return conn, cur
     except Exception as e:
-        print("❌ Failed to create cursor:", e)
+        print(" Failed to create cursor:", e)
         conn.close()
         return None, None
 
@@ -57,7 +66,7 @@ def get_cursor_cm():
         yield cur
         conn.commit()
     except Exception as e:
-        print("❌ DB error in context manager:", e)
+        print(" DB error in context manager:", e)
         conn.rollback()
         raise
     finally:
@@ -75,7 +84,7 @@ def query_all(sql, params=None):
         results = cur.fetchall()
         return results
     except Exception as e:
-        print("❌ Query error (all):", e)
+        print(" Query error (all):", e)
         return []
     finally:
         conn.close()
@@ -92,7 +101,7 @@ def query_one(sql, params=None):
         result = cur.fetchone()
         return result
     except Exception as e:
-        print("❌ Query error (one):", e)
+        print(" Query error (one):", e)
         return None
     finally:
         conn.close()
@@ -120,7 +129,7 @@ def execute(sql, params=None, return_row=False):
         return True
 
     except Exception as e:
-        print("❌ Execution error:", e)
+        print(" Execution error:", e)
         conn.rollback()
         return None if return_row else False
     finally:
