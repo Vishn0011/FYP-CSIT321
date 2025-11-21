@@ -4819,5 +4819,6 @@ def get_agent_tours(agent_id):
     return jsonify({"ok": True, "tours": rows})
 
 if __name__ == "__main__":
+    import os
     port = int(os.getenv("PORT", "8000"))
-    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
