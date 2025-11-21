@@ -44,7 +44,6 @@ pandocfilters==1.5.1
 parso==0.8.5
 pickleshare==0.7.5
 pip-check-reqs==2.5.5
-pipreqs==0.5.0
 platformdirs==4.5.0
 prompt_toolkit==3.0.52
 psycopg2-binary==2.9.10
