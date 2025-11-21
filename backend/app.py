@@ -29,11 +29,12 @@ import stripe
 from decimal import Decimal
 import requests
 from datetime import datetime, timezone
-
 from pathlib import Path
 
 load_dotenv()
 app = Flask(__name__)
+
+app.register_blueprint(users_bp)
 
 BASE_DIR = Path(__file__).resolve().parent
 geo_bp = Blueprint("geo", __name__)
@@ -693,10 +694,10 @@ def update_password():
     return jsonify({"ok": True})
 
 # ---------- USERS ----------
-@app.get("/api/users")
-def list_users():
-    rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
-    return jsonify(rows)
+#@app.get("/api/users")
+#def list_users():
+#    rows = query_all("SELECT id, email, created_at FROM users ORDER BY id DESC;")
+#    return jsonify(rows)
 
 @app.get("/api/users/pending")
 def get_pending_users():
@@ -781,6 +782,34 @@ def delete_feature(fid):
     execute("DELETE FROM features WHERE id=%s", [fid])
     return jsonify({"deleted": fid})
 
+# 1. PUBLIC: Get only ACTIVE videos for the homepage
+@app.get("/api/homepage-videos")
+def public_homepage_videos():
+    # Only select ones marked TRUE
+    rows = query_all("SELECT file_name FROM homepage_videos WHERE is_active = TRUE")
+    # Return a simple list of filenames: ['welcome-agent.mp4', 'welcome-homeowner.mp4']
+    return jsonify([r['file_name'] for r in rows])
+
+# 2. ADMIN: Get ALL videos (so you can see what to enable/disable)
+@app.get("/api/admin/homepage-videos")
+def admin_homepage_videos():
+    rows = query_all("SELECT * FROM homepage_videos ORDER BY id ASC")
+    return jsonify(rows)
+
+# 3. ADMIN: Toggle status
+@app.post("/api/admin/homepage-videos/toggle")
+def admin_toggle_homepage_video():
+    data = request.get_json(force=True)
+    vid_id = data["id"]
+    # We set it to whatever the frontend sent us (true/false)
+    new_status = data["is_active"] 
+
+    execute(
+        "UPDATE homepage_videos SET is_active = %s WHERE id = %s",
+        [new_status, vid_id]
+    )
+    return jsonify({"ok": True})
+
 #show in dashboard recent pending properties for admin
 @app.get("/api/properties/recent")
 def recent_properties():
@@ -817,41 +846,93 @@ def approve_property(prop_id):
 
 # List all active properties (public marketplace view)
 # Called by: AllPropertiesPage.js
+
 @app.get("/api/properties/all")
 def list_all_public_properties():
-    """
-    Gets all properties that are marked as 'Active' for the public marketplace.
-    """
-    
-    # --- Following the style of your /api/properties endpoint ---
-    query = """
-        SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
-               size, location, photos, status, created_at, updated_at
+    try:
+        page = int(request.args.get("page", "1"))
+    except ValueError:
+        page = 1
+    try:
+        page_size = int(request.args.get("page_size", "20"))
+    except ValueError:
+        page_size = 20
+
+    page = max(1, page)
+    page_size = max(1, min(page_size, 50))  # hard cap
+
+    offset = (page - 1) * page_size
+
+    base_sql = """
         FROM properties
-        WHERE 1=1
+        WHERE status = %s AND is_deleted = FALSE
     """
-    params = []
 
-    # Hard-code the 'Active' status for this public endpoint
-    query += " AND status = %s"
-    params.append('Active')
+    # total count
+    total_row = query_one(f"SELECT COUNT(*)::int AS total {base_sql}", ["Active"])
+    total = total_row["total"] if total_row else 0
 
-    query += " ORDER BY created_at DESC"
-    
-    # Call query_all with *both* arguments, just like your working function
-    rows = query_all(query, params)
-    
-    # --- Add back your JSON processing for photos ---
-    processed_rows = []
+    rows = query_all(
+        f"""
+        SELECT id, agent_id, title, property_type, price, bedrooms, bathrooms,
+               size, location, photos, created_at
+        {base_sql}
+        ORDER BY created_at DESC
+        LIMIT %s OFFSET %s
+        """,
+        ["Active", page_size, offset],
+    )
+
+    # parse photos minimally (e.g. only first image)
     for row in rows:
-        if 'photos' in row and isinstance(row['photos'], str):
+        photos = row.get("photos")
+        if isinstance(photos, str):
             try:
-                row['photos'] = json.loads(row['photos'])
+                arr = json.loads(photos)
+                row["photos"] = arr[:1]  # only thumbnail
             except json.JSONDecodeError:
-                row['photos'] = [] # Default to empty list if parsing fails
-        processed_rows.append(row)
+                row["photos"] = []
 
-    return jsonify(processed_rows)
+    return jsonify({"data": rows, "page": page, "page_size": page_size, "total": total})
+
+
+# @app.get("/api/properties/all")
+# def list_all_public_properties():
+#     """
+#     Gets all properties that are marked as 'Active' for the public marketplace.
+#     """
+    
+#     # --- Following the style of your /api/properties endpoint ---
+#     query = """
+#         SELECT id, agent_id, title, property_type, description, price, bedrooms, bathrooms,
+#                size, location, photos, status, created_at, updated_at
+#         FROM properties
+#         WHERE 1=1
+#     """
+#     params = []
+
+#     # Hard-code the 'Active' status for this public endpoint
+#     query += " AND status = %s"
+#     params.append('Active')
+
+#     query += " ORDER BY created_at DESC"
+    
+#     # Call query_all with *both* arguments, just like your working function
+#     rows = query_all(query, params)
+    
+#     # --- Add back your JSON processing for photos ---
+#     processed_rows = []
+#     for row in rows:
+#         if 'photos' in row and isinstance(row['photos'], str):
+#             try:
+#                 row['photos'] = json.loads(row['photos'])
+#             except json.JSONDecodeError:
+#                 row['photos'] = [] # Default to empty list if parsing fails
+#         processed_rows.append(row)
+
+#     return jsonify(processed_rows)
+
+
 
 
 # === 2. PUBLIC: Get ONE Active Property by ID ===
@@ -4069,11 +4150,6 @@ from datetime import datetime, timezone
 @app.get("/api/my/announcements")
 @auth_required
 def my_announcements():
-    """
-    Returns active web announcements targeted at the current user,
-    excluding ones they've dismissed.
-    Also ensures a user_announcements row exists (delivered_at) for each.
-    """
     user = request.user
     user_id = user["id"]
     role = str(user.get("role", "")).lower()
@@ -4101,19 +4177,25 @@ def my_announcements():
             WHERE a.channel_web = TRUE
               AND (a.starts_at IS NULL OR a.starts_at <= %s)
               AND (a.ends_at   IS NULL OR a.ends_at   >= %s)
-              AND (ua.dismissed_at IS NULL)        -- don't return dismissed ones
+              AND (ua.dismissed_at IS NULL)
               AND (
-                    t.announcement_id IS NULL      -- everyone
-                    OR t.role_in IS NULL           -- no role filter
-                    OR %s = ANY(t.role_in)         -- this role targeted
+                    -- global announcement (no targeting row at all)
+                    t.announcement_id IS NULL
+
+                    -- role targeting (role must be in array)
+                    OR (%s = ANY(t.role_in))
+
+                    -- direct user targeting
+                    OR (%s = ANY(t.include_user_ids))
                   )
             ORDER BY a.created_at DESC
             """,
-            [user_id, now, now, role],
+            [user_id, now, now, role, user_id],
         )
+
         rows = cur.fetchall()
 
-        # ensure delivered_at row exists per announcement/user
+        # ensure delivered_at exists
         for r in rows:
             cur.execute(
                 """
@@ -4124,8 +4206,7 @@ def my_announcements():
                 [r["id"], user_id],
             )
 
-    # Standardised object so we can reuse on frontend as "notifications"
-    payload = [
+    return jsonify([
         {
             "id": r["id"],
             "title": r["title"],
@@ -4135,10 +4216,7 @@ def my_announcements():
             "dismissed_at": r["dismissed_at"],
         }
         for r in rows
-    ]
-    return jsonify(payload)
-
-
+    ])
 
 # --- Stripe (payment service) checkout ---
 @app.post("/api/payments/checkout")
@@ -4550,7 +4628,195 @@ def get_prediction(property_id):
         print("❌ Prediction fetch error:", e)
         return jsonify({"success": False, "message": "Error fetching prediction."}), 500
 
+# --- Property tour booking ---
+@app.post("/api/tours")
+def create_tour():
+    body = request.get_json(force=True) or {}
 
+    property_id = body.get("property_id")
+    agent_id = body.get("agent_id")
+    user_id = body.get("user_id")          # buyer
+    preferred_date = body.get("preferred_date")
+    preferred_time = body.get("preferred_time")
+    tour_type = body.get("tour_type") or "In-Person"
+    message = body.get("message") or ""
+
+    with get_cursor_cm() as cur:
+
+        # 1️⃣ Create tour record
+        cur.execute("""
+            INSERT INTO property_tours (
+                property_id, agent_id, user_id,
+                preferred_date, preferred_time,
+                tour_type, message
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id;
+        """, [
+            property_id, agent_id, user_id,
+            preferred_date, preferred_time,
+            tour_type, message,
+        ])
+        tour_id = cur.fetchone()["id"]
+
+        # Fetch property
+        cur.execute("SELECT title, location FROM properties WHERE id = %s", [property_id])
+        prop = cur.fetchone()
+
+        # Fetch buyer info
+        cur.execute("SELECT name FROM users WHERE id = %s", [user_id])
+        buyer = cur.fetchone()
+
+        # 2️⃣ Announcement → AGENT
+        cur.execute("""
+            INSERT INTO announcements
+                (title, body_md, kind, channel_web, channel_email, priority, status, created_by)
+            VALUES
+                (%s, %s, 'general', TRUE, FALSE, 0, 'active', %s)
+            RETURNING id;
+        """, [
+            f"New Tour Request – {prop['title']}",
+            f"""
+🗓 {preferred_date} at {preferred_time}
+👤 Buyer: {buyer['name']}
+🏡 {prop['title']}
+📍 {prop['location']}
+""",
+            user_id    # BUYER created this request
+        ])
+        ann_agent_id = cur.fetchone()["id"]
+
+        # Assign to AGENT only
+        cur.execute("""
+            INSERT INTO announcement_targets (announcement_id, include_user_ids)
+            VALUES (%s, %s)
+        """, [ann_agent_id, [agent_id]])
+
+        # 3️⃣ Announcement → BUYER
+        cur.execute("""
+            INSERT INTO announcements
+                (title, body_md, kind, channel_web, channel_email, priority, status, created_by)
+            VALUES
+                (%s, %s, 'general', TRUE, FALSE, 0, 'active', %s)
+            RETURNING id;
+        """, [
+            "Your Tour Request Has Been Sent",
+            f"""
+You requested a viewing for **{prop['title']}**.
+🗓 {preferred_date} at {preferred_time}
+Type: {tour_type}
+""",
+            agent_id   # AGENT is the source of this system message
+        ])
+        ann_buyer_id = cur.fetchone()["id"]
+
+        # Assign to BUYER only
+        cur.execute("""
+            INSERT INTO announcement_targets (announcement_id, include_user_ids)
+            VALUES (%s, %s)
+        """, [ann_buyer_id, [user_id]])
+
+    return jsonify({"ok": True, "tour_id": tour_id})
+
+
+
+# --- Update tour status (Accept/Decline) ---
+@app.patch("/api/tours/<int:tour_id>")
+def update_tour_status(tour_id):
+    body = request.get_json(force=True) or {}
+    status = body.get("status")
+
+    with get_cursor_cm() as cur:
+
+        # Fetch tour
+        cur.execute("SELECT * FROM property_tours WHERE id = %s", [tour_id])
+        tour = cur.fetchone()
+        if not tour:
+            return jsonify({"error": "Tour not found"}), 404
+
+        # Update status
+        cur.execute("""
+            UPDATE property_tours
+            SET status = %s
+            WHERE id = %s
+        """, [status, tour_id])
+
+        # Fetch property
+        cur.execute("SELECT title FROM properties WHERE id = %s",
+            [tour["property_id"]])
+        prop = cur.fetchone()
+
+        # Buyer message
+        ann_title = f"Tour {status} – {prop['title']}"
+        ann_body = (
+            "🎉 Your tour request has been accepted! The agent will meet you as scheduled."
+            if status == "Accepted"
+            else "❌ The agent has declined your requested timing."
+        )
+
+        # Create announcement (created by AGENT)
+        cur.execute("""
+            INSERT INTO announcements
+                (title, body_md, kind, channel_web, channel_email, priority, status, created_by)
+            VALUES
+                (%s, %s, 'general', TRUE, FALSE, 0, 'active', %s)
+            RETURNING id;
+        """, [
+            ann_title,
+            ann_body,
+            tour["agent_id"]      # AGENT performed the action
+        ])
+
+        ann_id = cur.fetchone()["id"]
+
+        # Only BUYER receives this
+        cur.execute("""
+            INSERT INTO announcement_targets (announcement_id, include_user_ids)
+            VALUES (%s, %s)
+        """, [ann_id, [tour["user_id"]]])
+
+    return jsonify({"ok": True})
+
+# --- Get tours for a specific agent ---
+@app.get("/api/tours/agent/<int:agent_id>")
+def get_agent_tours(agent_id):
+    status = request.args.get("status", "All")
+
+    query = """
+        SELECT 
+            t.id,
+            t.property_id,
+            t.agent_id,
+            t.user_id,
+            t.preferred_date,
+            t.preferred_time,
+            t.tour_type,
+            t.status,
+            t.message,
+            t.created_at,
+
+            p.title AS property_title,
+            p.location AS property_location,
+
+            u.name AS buyer_name,
+            u.email AS buyer_email,
+            u.phone AS buyer_phone
+        FROM property_tours t
+        JOIN properties p ON p.id = t.property_id
+        JOIN users u ON u.id = t.user_id
+        WHERE t.agent_id = %s
+    """
+
+    params = [agent_id]
+
+    if status != "All":
+        query += " AND t.status = %s"
+        params.append(status)
+
+    query += " ORDER BY t.created_at DESC"
+
+    rows = query_all(query, params)
+    return jsonify({"ok": True, "tours": rows})
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))

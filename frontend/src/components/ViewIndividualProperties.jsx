@@ -67,6 +67,14 @@ export default function PropertyDetails() {
     const userRole = user?.role || "guest";
     const galleryRef = useRef(null);
     const [displayPhotos, setDisplayPhotos] = useState([]);
+    const [showTourModal, setShowTourModal] = useState(false);
+    const [tourForm, setTourForm] = useState({
+        preferred_date: "",
+        preferred_time: "",
+        tour_type: "In-Person",
+        message: "",
+    });
+
 
     function scrollGallery(direction) {
         if (galleryRef.current) {
@@ -696,7 +704,10 @@ export default function PropertyDetails() {
                                     >
                                         <Mail className="w-4 h-4" /> Contact Agent
                                     </button>
-                                    <button className="btn btn-outline flex items-center gap-2">
+                                    <button
+                                        className="btn btn-outline flex items-center gap-2"
+                                        onClick={() => setShowTourModal(true)}
+                                    >
                                         <Calendar className="w-4 h-4" /> Schedule a Tour
                                     </button>
                                 </div>
@@ -732,7 +743,7 @@ export default function PropertyDetails() {
             </div> {/* <-- END OF property-content-grid --> */}
 
 
-            {/* --- Contact Modal (Homeowner only) (Unchanged) --- */}
+            {/* --- Contact Modal (Homeowner only)--- */}
             {userRole === "homeowner" && showModal && (
                 <div className="modal-backdrop">
                     <div className="modal-box">
@@ -860,6 +871,83 @@ export default function PropertyDetails() {
                     </div>
                 </div>
             )}
+            {/* --- Schedule a tour Modal (Homeowner only)--- */}
+            {userRole === "homeowner" && showTourModal && (
+                <div className="modal-backdrop">
+                    <div className="modal-box">
+                        <h3 className="modal-title flex items-center gap-2">
+                            <Calendar className="w-5 h-5 text-emerald-700" /> Schedule a Property Tour
+                        </h3>
+
+                        <label>Date</label>
+                        <input
+                            type="date"
+                            value={tourForm.preferred_date}
+                            onChange={(e) => setTourForm({ ...tourForm, preferred_date: e.target.value })}
+                        />
+
+                        <label>Time</label>
+                        <input
+                            type="time"
+                            value={tourForm.preferred_time}
+                            onChange={(e) => setTourForm({ ...tourForm, preferred_time: e.target.value })}
+                        />
+
+                        <label>Tour Type</label>
+                        <select
+                            value={tourForm.tour_type}
+                            onChange={(e) => setTourForm({ ...tourForm, tour_type: e.target.value })}
+                        >
+                            <option>In-Person</option>
+                            <option>Virtual</option>
+                        </select>
+
+                        <label>Message (Optional)</label>
+                        <textarea
+                            rows="2"
+                            value={tourForm.message}
+                            onChange={(e) => setTourForm({ ...tourForm, message: e.target.value })}
+                            placeholder="Any notes or preferences..."
+                        />
+
+                        <div className="modal-actions">
+                            <button className="btn btn-outline" onClick={() => setShowTourModal(false)}>
+                                Cancel
+                            </button>
+
+                            <button
+                                className="btn btn-primary flex items-center gap-2"
+                                onClick={async () => {
+                                    try {
+                                        const res = await api.post("/tours", {
+                                            property_id: property.id,
+                                            agent_id: property.agent_id,
+                                            user_id: user.id,
+                                            ...tourForm,
+                                        });
+
+                                        if (res.data.ok) {
+                                            Swal.fire({
+                                                icon: "success",
+                                                title: "Tour Request Sent!",
+                                                text: "The agent has been notified.",
+                                                confirmButtonColor: "#00674f",
+                                            });
+                                            setShowTourModal(false);
+                                        }
+                                    } catch (err) {
+                                        Swal.fire("Error", "Unable to schedule tour.", "error");
+                                    }
+                                }}
+                            >
+                                <CheckCircle className="w-4 h-4" /> Request Tour
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+
         </div>
     );
 }

@@ -1,7 +1,19 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import ManageFeatures from "./ManageFeatures";
 import axios from "axios";
+import ManageHomepageVideos from "./ManageHomePageVideos";
+import AdminPropertyModal from "./AdminPropertyModal";
+import {
+    Train,
+    ShoppingCart,
+    School,
+    Hospital,
+    Trees,
+    Briefcase,
+    MapPin,
+} from "lucide-react";
+
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
@@ -25,11 +37,10 @@ export default function AdminDashboard() {
     const [announcements, setAnnouncements] = useState([]);
     const [annLoading, setAnnLoading] = useState(true);
     const [annErr, setAnnErr] = useState("");
-
-
-
-
-
+    const [adminAiCurrent, setAdminAiCurrent] = useState(null);
+    const [adminAiFuture, setAdminAiFuture] = useState(null);
+    const [adminHistory, setAdminHistory] = useState([]);
+    const [adminPredictLoading, setAdminPredictLoading] = useState(false);
 
     useEffect(() => {
         async function fetchAnnouncements() {
@@ -87,32 +98,47 @@ export default function AdminDashboard() {
     async function fetchPropertyDetails(id) {
         try {
             const res = await api.get(`/api/properties/${id}`);
-            console.log("Property details response:", res.data);
-            setSelected(res.data);
-        } catch (err) {
-            console.error("Failed to fetch property details:", err);
-        }
-    }
-    useEffect(() => {
-        if (!selected?.id) return; // only run when we have a property
-        setLoadingPred(true);
+            const data = res.data;
+            setSelected(data);
 
-        const fetchPrediction = async () => {
+            setAdminPredictLoading(true);
+
             try {
-                // ⚠️ adjust path if your baseURL already has /api
-                const res = await api.get(`/api/predict/${selected.id}`);
-                if (res.data.success) {
-                    setSelected(prev => ({ ...prev, ...res.data }));
+                const aiRes = await api.get(`/api/predictions/property/${id}`);
+                if (aiRes.data && aiRes.data.length > 0) {
+                    const rows = [...aiRes.data].reverse();
+                    const current = rows.find(r => r.model_type?.includes("current"));
+                    const future = rows.find(r => r.model_type?.includes("future"));
+
+                    setAdminAiCurrent(current || null);
+                    setAdminAiFuture(future || null);
+                } else {
+                    setAdminAiCurrent(null);
+                    setAdminAiFuture(null);
                 }
             } catch (err) {
-                console.error("❌ Failed to fetch prediction:", err);
-            } finally {
-                setLoadingPred(false);
+                console.error("❌ AI insight error:", err);
+                setAdminAiCurrent(null);
+                setAdminAiFuture(null);
             }
-        };
 
-        fetchPrediction();
-    }, [selected?.id]);
+            try {
+                const histRes = await api.post("/api/predict/history/nearby", {
+                    latitude: data.latitude,
+                    longitude: data.longitude,
+                });
+                setAdminHistory(histRes.data.history || []);
+            } catch (err) {
+                console.error("❌ Nearby history error:", err);
+                setAdminHistory([]);
+            }
+
+        } catch (err) {
+            console.error("Failed to fetch property details:", err);
+        } finally {
+            setAdminPredictLoading(false);
+        }
+    }
 
     useEffect(() => {
         async function fetchStats() {
@@ -167,14 +193,14 @@ export default function AdminDashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
             <main className="flex-1">
                 <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
                     <div className="mb-8">
-                        <h1 className="text-3xl font-bold text-gray-800">
+                        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
                             Admin Dashboard
                         </h1>
-                        <p className="text-gray-500 mt-1">
+                        <p className="text-gray-500 dark:text-gray-400 mt-1">
                             An overview of the key activities and metrics on
                             AgentPro.
                         </p>
@@ -229,35 +255,32 @@ export default function AdminDashboard() {
                                 </div>
                             ) : (
                                 <table className="w-full text-left">
-                                    <thead className="border-b border-gray-200">
+                                    <thead className="border-b border-gray-200 dark:border-gray-700">
                                         <tr>
-                                            <th className="p-3 font-semibold text-gray-500">
+                                            <th className="p-3 font-semibold text-gray-500 dark:text-gray-400">
                                                 Name
                                             </th>
-                                            <th className="p-3 font-semibold text-gray-500">
+                                            <th className="p-3 font-semibold text-gray-500 dark:text-gray-400">
                                                 Email
                                             </th>
-                                            <th className="p-3 font-semibold text-gray-500">
+                                            <th className="p-3 font-semibold text-gray-500 dark:text-gray-400">
                                                 Role
                                             </th>
-                                            <th className="p-3 font-semibold text-gray-500">
+                                            <th className="p-3 font-semibold text-gray-500 dark:text-gray-400">
                                                 Status
                                             </th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {stats.recent.map((u) => (
-                                            <tr
-                                                key={u.id}
-                                                className="border-b hover:bg-gray-50"
-                                            >
-                                                <td className="p-3">
+                                            <tr key = { u.id } className = "border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" >
+                                                <td className="p-3 text-gray-800 dark:text-gray-200">
                                                     {u.name || "—"}
                                                 </td>
-                                                <td className="p-3 text-gray-500">
+                                                <td className="p-3 text-gray-500 dark:text-gray-400">
                                                     {u.email}
                                                 </td>
-                                                <td className="p-3 capitalize">
+                                                <td className="p-3 capitalize text-gray-800 dark:text-gray-200">
                                                     {u.role || "user"}
                                                 </td>
                                                 <td className="p-3">
@@ -335,35 +358,32 @@ export default function AdminDashboard() {
                                     </tbody>
                                 </table>
                             )}
-
+                            {/* Modal */}
                             {/* Modal */}
                             {selected && (
                                 <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-                                    <div className="bg-white rounded-lg shadow-lg p-6 w-[600px] max-h-[90vh] overflow-y-auto">
-                                        <h2 className="text-xl font-bold mb-4">
-                                            {selected.title}
-                                        </h2>
+                                    <div className="bg-white rounded-lg shadow-lg p-6 w-[650px] max-h-[90vh] overflow-y-auto">
+
+                                        {/* TITLE */}
+                                        <h2 className="text-xl font-bold mb-4">{selected.title}</h2>
+
+                                        {/* BASIC INFO */}
                                         <p className="mb-2 text-gray-600">
-                                            <strong>Agent:</strong>{" "}
-                                            {selected.agent?.name || "N/A"}
-                                        </p>
-                                        <p className="mb-2 text-gray-600">
-                                            <strong>Status:</strong>{" "}
-                                            {selected.status}
+                                            <strong>Agent:</strong> {selected.agent?.name || "N/A"}
                                         </p>
                                         <p className="mb-2 text-gray-600">
-                                            <strong>Price:</strong> $
-                                            {selected.price}
+                                            <strong>Status:</strong> {selected.status}
                                         </p>
                                         <p className="mb-2 text-gray-600">
-                                            <strong>Location:</strong>{" "}
-                                            {selected.location}
+                                            <strong>Price:</strong> ${Number(selected.price).toLocaleString()}
                                         </p>
-                                        <p className="mb-4 text-gray-700">
-                                            {selected.description}
+                                        <p className="mb-4 text-gray-600">
+                                            <strong>Location:</strong> {selected.location}
                                         </p>
+
+                                        {/* PHOTOS */}
                                         {selected.photos && (
-                                            <div className="grid grid-cols-2 gap-2 mt-4">
+                                            <div className="grid grid-cols-2 gap-2 mt-2">
                                                 {(Array.isArray(selected.photos)
                                                     ? selected.photos
                                                     : JSON.parse(selected.photos || "[]")
@@ -381,54 +401,120 @@ export default function AdminDashboard() {
                                                 ))}
                                             </div>
                                         )}
-                                        {selected.predicted_total_price && (
-                                            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 mt-5 shadow-sm">
-                                                <div className="flex items-center gap-2 mb-3">
-                                                    <span className="text-emerald-600 text-xl">🤖</span>
-                                                    <h4 className="font-semibold text-emerald-900 text-lg tracking-tight">
-                                                        AI Market Prediction
-                                                    </h4>
-                                                </div>
 
-                                                <ul className="text-sm text-gray-800 space-y-2">
-                                                    <li className="flex justify-between border-b border-gray-100 pb-1">
-                                                        <span className="font-medium text-gray-600">Predicted Future Price:</span>
-                                                        <span className="font-semibold text-emerald-800">
-                                                            ${Number(selected.predicted_total_price).toLocaleString()}
-                                                        </span>
-                                                    </li>
+                                        {/* AI MARKET EVALUATION */}
+                                        <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                                            <h3 className="text-lg font-semibold text-emerald-700 mb-4 flex items-center gap-2">
+                                                🤖 AI Market Evaluation
+                                            </h3>
 
-                                                    <li className="flex justify-between border-b border-gray-100 pb-1">
-                                                        <span className="font-medium text-gray-600">Price per sqm:</span>
-                                                        <span className="font-semibold">
-                                                            ${Number(selected.predicted_price_per_sqm).toLocaleString()}
-                                                        </span>
-                                                    </li>
+                                            {adminPredictLoading ? (
+                                                <p className="text-gray-500">Loading AI predictions...</p>
+                                            ) : (
+                                                <>
+                                                    {/* CURRENT PRICE */}
+                                                    <div className="p-4 rounded-lg mb-4 bg-emerald-100">
+                                                        <h4 className="font-semibold text-gray-700">
+                                                            Current Market Price
+                                                        </h4>
+                                                        <p className="text-2xl font-bold text-emerald-800">
+                                                            {adminAiCurrent?.predicted_current
+                                                                ? `$${Number(adminAiCurrent.predicted_current).toLocaleString()}`
+                                                                : "—"}
+                                                        </p>
 
-                                                    <li className="flex justify-between border-b border-gray-100 pb-1">
-                                                        <span className="font-medium text-gray-600">Confidence Range:</span>
-                                                        <span>
-                                                            ${Number(selected.confidence_low).toLocaleString()} – $
-                                                            {Number(selected.confidence_high).toLocaleString()}
-                                                        </span>
-                                                    </li>
+                                                        {adminAiCurrent?.confidence_low && (
+                                                            <p className="text-gray-600 text-sm mt-1">
+                                                                95% range: $
+                                                                {Number(adminAiCurrent.confidence_low).toLocaleString()}
+                                                                {" – $"}
+                                                                {Number(adminAiCurrent.confidence_high).toLocaleString()}
+                                                            </p>
+                                                        )}
+                                                    </div>
 
-                                                    <li className="flex justify-between border-b border-gray-100 pb-1">
-                                                        <span className="font-medium text-gray-600">AI Confidence Level:</span>
-                                                        <span className="font-semibold text-indigo-700">
-                                                            {(Number(selected.confidence_score) * 100).toFixed(0)}%
-                                                        </span>
-                                                    </li>
-                                                </ul>
-                                            </div>
-                                        )}
+                                                    {/* FUTURE PRICE */}
+                                                    <div className="p-4 rounded-lg mb-4 bg-blue-100">
+                                                        <h4 className="font-semibold text-gray-700">
+                                                            Future Price Forecast
+                                                        </h4>
+                                                        <p className="text-2xl font-bold text-blue-800">
+                                                            {adminAiFuture?.predicted_price
+                                                                ? `$${Number(adminAiFuture.predicted_price).toLocaleString()}`
+                                                                : "—"}
+                                                        </p>
 
+                                                        {adminAiFuture?.confidence_low && (
+                                                            <p className="text-gray-600 text-sm mt-1">
+                                                                95% range: $
+                                                                {Number(adminAiFuture.confidence_low).toLocaleString()}
+                                                                {" – $"}
+                                                                {Number(adminAiFuture.confidence_high).toLocaleString()}
+                                                            </p>
+                                                        )}
+                                                    </div>
 
+                                                    {/* LOCATION AMENITIES */}
+                                                    <div className="bg-white border rounded-xl p-4 mb-4">
+                                                        <h3 className="text-lg font-semibold text-emerald-700 mb-3 flex items-center gap-2">
+                                                            <MapPin className="w-5 h-5" /> Location & Proximity
+                                                        </h3>
+
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <ProximityItem icon={Train} label="Nearest MRT" name={selected.nearest_mrt_name} distance={selected.nearest_mrt_km} />
+                                                            <ProximityItem icon={ShoppingCart} label="Nearest Mall" name={selected.nearest_mall_name} distance={selected.nearest_mall_km} />
+                                                            <ProximityItem icon={School} label="Nearest School" name={selected.nearest_school_name} distance={selected.nearest_school_km} />
+                                                            <ProximityItem icon={Hospital} label="Nearest Polyclinic" name={selected.nearest_hospital_name} distance={selected.nearest_hospital_km} />
+                                                            <ProximityItem icon={Trees} label="Nearest Park" name={selected.nearest_park_name} distance={selected.nearest_park_km} />
+                                                            <ProximityItem icon={Briefcase} label="Nearest Business Hub" name={selected.nearest_business_name} distance={selected.nearest_business_km} />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* PREDICTION HISTORY */}
+                                                    <details className="bg-white border rounded-lg mt-4 p-3">
+                                                        <summary className="cursor-pointer text-emerald-700 font-semibold flex items-center gap-2">
+                                                            📊 Prediction History (Nearby 1km)
+                                                        </summary>
+
+                                                        {adminHistory.length === 0 ? (
+                                                            <p className="text-gray-500 italic mt-2">
+                                                                No prediction history available.
+                                                            </p>
+                                                        ) : (
+                                                            <table className="w-full text-sm mt-3 border">
+                                                                <thead className="bg-gray-100">
+                                                                    <tr>
+                                                                        <th className="p-2 text-left">Date</th>
+                                                                        <th className="p-2 text-left">Predicted</th>
+                                                                        <th className="p-2 text-left">Listed</th>
+                                                                        <th className="p-2 text-left">Distance</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {adminHistory.map((h, i) => (
+                                                                        <tr key={i} className="border-t">
+                                                                            <td className="p-2">{h.created_at}</td>
+                                                                            <td className="p-2 text-emerald-700">
+                                                                                ${Number(h.predicted_price).toLocaleString()}
+                                                                            </td>
+                                                                            <td className="p-2">
+                                                                                ${Number(h.listed_price).toLocaleString()}
+                                                                            </td>
+                                                                            <td className="p-2">{h.distance_km} km</td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        )}
+                                                    </details>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* ACTION BUTTONS */}
                                         <div className="flex gap-4 justify-end mt-6">
                                             <button
-                                                onClick={() =>
-                                                    approveProperty(selected.id)
-                                                }
+                                                onClick={() => approveProperty(selected.id)}
                                                 className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
                                             >
                                                 Approve
@@ -440,9 +526,12 @@ export default function AdminDashboard() {
                                                 Close
                                             </button>
                                         </div>
+
                                     </div>
                                 </div>
                             )}
+
+
                         </Section>
 
                         {/* Manage Dropdowns */}
@@ -506,11 +595,17 @@ export default function AdminDashboard() {
                         >
                             <ManageFeatures />
                         </Section>
-
+                        {/* Manage Homepage Videos */}
+                        <Section
+                            title="Manage Homepage Videos"
+                            onViewAll={() => navigate("/admin/homepage-videos")}
+                        >
+                            <ManageHomepageVideos />
+                        </Section>
                         {/* Subscribe Page Settings */}
                         <Section
                             title="Subscribe Page Settings"
-                            onViewAll={() => {}}
+                            onViewAll={() => { }}
                         >
                             <ManagePaymentPage />
                         </Section>
@@ -518,7 +613,7 @@ export default function AdminDashboard() {
                         {/* Subscription Plans */}
                         <Section
                             title="Subscription Plans"
-                            onViewAll={() => {}}
+                            onViewAll={() => { }}
                         >
                             <ManagePlans />
                         </Section>
@@ -769,8 +864,12 @@ function ManagePaymentPage() {
 
     function handleChange(e) {
         const { name, value } = e.target;
-        setForm((f) => ({ ...f, [name]: value }));
+        setForm((f) => ({
+            ...f,
+            [name]: value,
+        }));
     }
+
 
     // 2) Save changes (this will update the DB via your PUT endpoint)
     async function handleSave(e) {
@@ -1031,11 +1130,10 @@ function ManagePlans() {
                                 </td>
                                 <td className="p-2">
                                     <span
-                                        className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                                            plan.is_active
-                                                ? "bg-green-100 text-green-700"
-                                                : "bg-red-100 text-red-700"
-                                        }`}
+                                        className={`px-2 py-1 text-xs font-semibold rounded-full ${plan.is_active
+                                            ? "bg-green-100 text-green-700"
+                                            : "bg-red-100 text-red-700"
+                                            }`}
                                     >
                                         {plan.is_active ? "Active" : "Inactive"}
                                     </span>
@@ -1059,6 +1157,19 @@ function ManagePlans() {
                     </tbody>
                 </table>
             )}
+        </div>
+    );
+}
+function ProximityItem({ icon: Icon, label, name, distance }) {
+    return (
+        <div className="flex items-start gap-3 p-2">
+            <Icon className="w-5 h-5 text-emerald-600 mt-1" />
+            <div>
+                <p className="font-semibold text-gray-700">{label}</p>
+                <p className="text-sm text-gray-600">
+                    {name || "N/A"} {distance ? `(${distance} km)` : ""}
+                </p>
+            </div>
         </div>
     );
 }
