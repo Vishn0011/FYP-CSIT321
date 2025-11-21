@@ -337,7 +337,7 @@ print(f"✅ v12 Model features loaded. Count: {len(MODEL_FEATURES)}")
 # Allow frontend (Vite dev server) + production frontend to call this API
 allowed_origins = {"http://localhost:5173", "http://localhost:3000"}
 if ALLOW_ORIGIN:
-    allowed_origins.add(ALLOW_ORIGIN)
+    allowed_origins.add(ALLOW_ORIGIN.strip())
 
 @app.after_request
 def add_cors_headers(response):
@@ -348,7 +348,7 @@ def add_cors_headers(response):
     if origin and origin in allowed_origins:
         allowed_value = origin
     elif ALLOW_ORIGIN:
-        allowed_value = ALLOW_ORIGIN
+        allowed_value = ALLOW_ORIGIN.strip()
 
     if allowed_value:
         response.headers["Access-Control-Allow-Origin"] = allowed_value
