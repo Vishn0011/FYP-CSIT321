@@ -1,1 +1,3 @@
+libgomp1build-essential
 libgomp1
+libpq-dev
