@@ -19,8 +19,8 @@ from psycopg2.extras import RealDictCursor
 import joblib
 import pandas as pd
 import numpy as np  
-# from lightgbm import LGBMRegressor
-LGBMRegressor = None
+from lightgbm import LGBMRegressor
+#LGBMRegressor = None
 from sklearn.preprocessing import LabelEncoder
 from datetime import datetime
 from math import radians, cos, sin, asin, sqrt
