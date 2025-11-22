@@ -30,7 +30,9 @@ export default function WelcomeVideo() {
     // --- FIX EXPLANATION ---
     // The API returns: ["welcome-agent.mp4", "welcome-homeowner.mp4"]
     // So 'current' is already the string. We don't need .file_name here.
-    const current = videos[index];
+    const currentEntry = videos[index];
+    const current = typeof currentEntry === "string" ? currentEntry : currentEntry?.file_name;
+    if (!current) return null;
     const src = `/media/${current}`;
 
     return (
