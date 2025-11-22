@@ -189,6 +189,17 @@ export default function LoginPage() {
                                 onError={() => setErr("Google Login Failed")}
                             />
                         </div>
+
+                        {/* Admin login link */}
+                        <p className="mt-6 text-center text-sm text-gray-600 dark:text-zinc-400">
+                            Admin?{" "}
+                            <Link
+                                to="/admin/login"
+                                className="font-semibold text-emerald-800 hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200"
+                            >
+                                Go to admin sign in
+                            </Link>
+                        </p>
                     </div>
                 </div>
             </main>
