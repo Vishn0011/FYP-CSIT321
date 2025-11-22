@@ -1,9 +1,9 @@
 ﻿import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import ManageFeatures from "./ManageFeatures";
-import axios from "axios";
 import ManageHomepageVideos from "./ManageHomePageVideos";
 import AdminPropertyModal from "./AdminPropertyModal";
+import api from "../api";
 import {
     Train,
     ShoppingCart,
@@ -14,21 +14,6 @@ import {
     MapPin,
 } from "lucide-react";
 
-
-const API_BASE =
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_URL ||
-    "http://localhost:8000";
-
-const api = axios.create({
-    baseURL: API_BASE,
-});
-
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem("token"); // or wherever you store it
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-    return config;
-});
 
 export default function AdminDashboard() {
     const navigate = useNavigate();
@@ -51,7 +36,7 @@ export default function AdminDashboard() {
         async function fetchAnnouncements() {
             try {
                 setAnnErr("");
-                const res = await api.get("/api/admin/announcements");
+                const res = await api.get("/admin/announcements");
                 const list = Array.isArray(res.data) ? res.data : [];
                 // only keep first 10
                 setAnnouncements(list.slice(0, 10));
@@ -69,12 +54,8 @@ export default function AdminDashboard() {
 
     async function approveProperty(id) {
         try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${API_BASE}/api/properties/${id}/approve`, {
-                method: "PATCH",
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res.ok) throw new Error("Failed to approve");
+            const res = await api.patch(`/properties/${id}/approve`);
+            if (res.status !== 200) throw new Error("Failed to approve");
             alert("Property approved!");
             setSelected(null);
             window.location.reload();
@@ -88,7 +69,7 @@ export default function AdminDashboard() {
     useEffect(() => {
         async function fetchListings() {
             try {
-                const res = await api.get("/api/properties/recent");
+                const res = await api.get("/properties/recent");
                 setListings(res.data);
             } catch (err) {
                 console.error("Failed to fetch listings:", err);
@@ -99,14 +80,14 @@ export default function AdminDashboard() {
 
     async function fetchPropertyDetails(id) {
         try {
-            const res = await api.get(`/api/properties/${id}`);
+            const res = await api.get(`/properties/${id}`);
             const data = res.data;
             setSelected(data);
 
             setAdminPredictLoading(true);
 
             try {
-                const aiRes = await api.get(`/api/predictions/property/${id}`);
+                const aiRes = await api.get(`/predictions/property/${id}`);
                 if (aiRes.data && aiRes.data.length > 0) {
                     const rows = [...aiRes.data].reverse();
                     const current = rows.find(r => r.model_type?.includes("current"));
@@ -125,7 +106,7 @@ export default function AdminDashboard() {
             }
 
             try {
-                const histRes = await api.post("/api/predict/history/nearby", {
+                const histRes = await api.post("/predict/history/nearby", {
                     latitude: data.latitude,
                     longitude: data.longitude,
                 });
@@ -146,7 +127,7 @@ export default function AdminDashboard() {
         async function fetchStats() {
             try {
                 setErr("");
-                const res = await api.get("/api/users/stats"); // using api.js
+                const res = await api.get("/users/stats"); // using api.js
                 setStats({
                     total: Number(res.data?.total || 0),
                     recent: Array.isArray(res.data?.recent)
@@ -166,7 +147,7 @@ export default function AdminDashboard() {
     useEffect(() => {
         async function fetchPending() {
             try {
-                const res = await api.get("/api/users/pending");
+                const res = await api.get("/users/pending");
                 setPendingUsers(res.data);
             } catch (err) {
                 console.error("Failed to fetch pending users:", err);
@@ -177,12 +158,8 @@ export default function AdminDashboard() {
 
     async function approveUser(id) {
         try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${API_BASE}/api/users/${id}/approve`, {
-                method: "PATCH",
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res.ok) throw new Error("Failed to approve user");
+            const res = await api.patch(`/users/${id}/approve`);
+            if (res.status !== 200) throw new Error("Failed to approve user");
             alert("Agent approved!");
             setPendingUsers((prev) => prev.filter((u) => u.id !== id));
         } catch (err) {
@@ -732,7 +709,7 @@ function ManageDropdowns() {
 
     const fetchOptions = async () => {
         try {
-            const res = await api.get(`/api/options/${type}`);
+            const res = await api.get(`/options/${type}`);
             setOptions(res.data.options || []);
         } catch (err) {
             console.error("Failed to fetch options", err);
@@ -743,7 +720,7 @@ function ManageDropdowns() {
         const name = prompt("Enter new option:");
         if (!name) return;
         try {
-            await api.post(`/api/options/${type}`, { name });
+            await api.post(`/options/${type}`, { name });
             fetchOptions();
         } catch (err) {
             console.error("Failed to add option", err);
@@ -753,7 +730,7 @@ function ManageDropdowns() {
     const toggleStatus = async (id, currentStatus) => {
         const newStatus = currentStatus === "active" ? "inactive" : "active";
         try {
-            await api.put(`/api/options/${id}/status`, { status: newStatus });
+            await api.put(`/options/${id}/status`, { status: newStatus });
             fetchOptions();
         } catch (err) {
             console.error("Failed to update status", err);
@@ -844,7 +821,7 @@ function ManagePaymentPage() {
         const fetchPage = async () => {
             try {
                 setStatus("");
-                const res = await api.get("/api/admin/payment-page");
+                const res = await api.get("/admin/payment-page");
                 const d = res.data || {};
                 setForm({
                     title: d.title || "",
@@ -876,7 +853,7 @@ function ManagePaymentPage() {
         setSaving(true);
         setStatus("");
         try {
-            const res = await api.put("/api/admin/payment-page", {
+            const res = await api.put("/admin/payment-page", {
                 title: form.title,
                 subtitle: form.subtitle,
                 disclaimer: form.disclaimer,
@@ -976,7 +953,7 @@ function ManagePlans() {
         try {
             setStatus("");
             // ✅ use the new admin endpoint
-            const res = await api.get("/api/admin/plans");
+            const res = await api.get("/admin/plans");
             const list = Array.isArray(res.data) ? res.data : [];
             setPlans(list);
         } catch (err) {
@@ -1014,7 +991,7 @@ function ManagePlans() {
                 stripe_price_id: stripePriceId,
                 is_active: true,
             };
-            const res = await api.post("/api/admin/plans", body);
+            const res = await api.post("/admin/plans", body);
             setPlans((prev) => [...prev, res.data]);
             setStatus("Plan created.");
         } catch (err) {
@@ -1025,7 +1002,7 @@ function ManagePlans() {
 
     const toggleActive = async (plan) => {
         try {
-            const res = await api.patch(`/api/admin/plans/${plan.id}`, {
+            const res = await api.patch(`/admin/plans/${plan.id}`, {
                 is_active: !plan.is_active,
             });
             setPlans((prev) =>
@@ -1049,7 +1026,7 @@ function ManagePlans() {
         if (Number.isNaN(value)) return alert("Invalid amount.");
 
         try {
-            const res = await api.patch(`/api/admin/plans/${plan.id}`, {
+            const res = await api.patch(`/admin/plans/${plan.id}`, {
                 unit_amount: value,
             });
             setPlans((prev) =>
