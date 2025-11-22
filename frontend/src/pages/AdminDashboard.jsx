@@ -15,8 +15,13 @@ import {
 } from "lucide-react";
 
 
+const API_BASE =
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    "http://localhost:8000";
+
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
+    baseURL: API_BASE,
 });
 
 api.interceptors.request.use((config) => {
@@ -65,13 +70,10 @@ export default function AdminDashboard() {
     async function approveProperty(id) {
         try {
             const token = localStorage.getItem("token");
-            const res = await fetch(
-                `${import.meta.env.VITE_API_URL}/api/properties/${id}/approve`,
-                {
-                    method: "PATCH",
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
+            const res = await fetch(`${API_BASE}/api/properties/${id}/approve`, {
+                method: "PATCH",
+                headers: { Authorization: `Bearer ${token}` },
+            });
             if (!res.ok) throw new Error("Failed to approve");
             alert("Property approved!");
             setSelected(null);
@@ -176,13 +178,10 @@ export default function AdminDashboard() {
     async function approveUser(id) {
         try {
             const token = localStorage.getItem("token");
-            const res = await fetch(
-                `${import.meta.env.VITE_API_URL}/api/users/${id}/approve`,
-                {
-                    method: "PATCH",
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
+            const res = await fetch(`${API_BASE}/api/users/${id}/approve`, {
+                method: "PATCH",
+                headers: { Authorization: `Bearer ${token}` },
+            });
             if (!res.ok) throw new Error("Failed to approve user");
             alert("Agent approved!");
             setPendingUsers((prev) => prev.filter((u) => u.id !== id));
